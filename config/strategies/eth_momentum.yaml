@@ -1,0 +1,38 @@
+# ETH/USDT momentum stratejisi — trend takibi, orta risk.
+
+strategy_id: eth_momentum_v1
+name: ETH Momentum
+description: >
+  ETH/USDT için EMA trend takibi + RSI onayı ile çalışan,
+  orta risk/kaldıraç seviyesindeki momentum stratejisi.
+symbol: ETHUSDT
+timeframe: 15m
+risk_level: medium
+
+indicators:
+  ema:
+    enabled: true
+    short_period: 9
+    long_period: 21
+    weight: 0.40
+  rsi:
+    enabled: true
+    period: 14
+    oversold: 30
+    overbought: 70
+    weight: 0.25
+  volume_profile:
+    enabled: true
+    lookback_periods: 100
+    weight: 0.25
+  atr:
+    enabled: true
+    period: 14
+    min_volatility_mult: 0.0008
+
+entry:
+  min_confidence_threshold: 70
+
+created_by: manual
+created_at: 2026-08-25
+status: active

@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.eggs/
+build/
+dist/
+
+# Secret / config
+.env
+.env.*
+!.env.example
+
+# Data / database
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+*.csv
+
+# Test cache
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+logs/
+*.log

@@ -1,0 +1,36 @@
+# Global ortak yapılandırma — tüm stratejilerde ortak ayarlar
+# (borsa, DB yolu, paper trading, execution, LLM danışman)
+
+exchange:
+  name: binance_futures          # yalnızca Binance USDT-M Futures (bu versiyonda)
+
+paper_trading:
+  starting_balance: 10000        # sanal başlangıç bakiyesi (USDT)
+  taker_fee: 0.0004              # Binance futures taker komisyonu
+  maker_fee: 0.0002              # Binance futures maker komisyonu
+
+execution:
+  mode: paper                    # paper | live (Faz 2)
+  confirm_live: false            # live mod için --confirm-live onayı zorunludur
+
+database:
+  path: data/bot.db
+
+streaming:
+  candle_buffer_size: 500        # indikatör hesabı için bellekte tutulan mum sayısı
+  reconnect_max_attempts: 5
+  reconnect_base_delay_sec: 1.0
+  reconnect_max_delay_sec: 30.0
+
+logging:
+  level: INFO
+  file: logs/bot.log
+  console: true
+
+llm_advisor:
+  enabled: true
+  provider: ollama               # ollama | api
+  ollama_base_url: http://localhost:11434
+  model: llama3.1:8b-instruct-q4
+  review_period: weekly
+  timeout_sec: 120
