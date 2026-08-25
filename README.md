@@ -190,4 +190,3 @@ Tüm zaman damgaları **UTC**'dir.
 ## Lisans
 
 Şartnameye göre özel proje — geliştirme amacıyla oluşturulmuştur.
-CI (GitHub Actions) her push'ta tüm testleri Python 3.11/3.12/3.13'te çalıştırır.
