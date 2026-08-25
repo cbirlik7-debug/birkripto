@@ -81,12 +81,23 @@ class CandleStream:
 
     async def _receive_loop(self):
         """WebSocket bağlantısını open/retry döngüsü içinde yönetir."""
+        import ssl
         import websockets
+
+        # macOS Python'da sistem sertifikalarına ulaşılamama sorununu aşar:
+        # certifi paketinin sertifika deposunu kullan.
+        try:
+            import certifi
+            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            ssl_ctx = ssl.create_default_context()
+
+        conn_kwargs = {"ssl": ssl_ctx}
 
         attempt = 0
         while True:
             try:
-                async with websockets.connect(self._ws_url) as ws:
+                async with websockets.connect(self._ws_url, **conn_kwargs) as ws:
                     logger.info("WebSocket bağlandı: %s", self._ws_url)
                     attempt = 0
                     async for raw in ws:

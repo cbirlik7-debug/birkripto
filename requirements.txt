@@ -17,6 +17,7 @@ ccxt>=4.2.0
 
 # Async websocket
 websockets>=12.0
+certifi>=2024.0.0   # macOS SSL sertifika deposu (CERTIFICATE_VERIFY_FAILED önlemi)
 
 # Optional: LLM advisor (Ollama via HTTP)
 requests>=2.31.0
