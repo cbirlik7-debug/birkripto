@@ -1,1 +1,0 @@
-"""Sinyal katmanı paketi."""

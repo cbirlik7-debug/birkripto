@@ -1,1 +1,0 @@
-"""Veri katmanı paketi."""

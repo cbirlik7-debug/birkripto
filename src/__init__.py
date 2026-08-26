@@ -1,1 +1,0 @@
-"""kripto-bot kaynak paketi."""
