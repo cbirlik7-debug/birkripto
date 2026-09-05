@@ -1,82 +1,91 @@
-import { Kline } from './binance.ts';
-import { calculateEMA } from './indicators/ema.ts';
-import { calculateRSI } from './indicators/rsi.ts';
-import { calculateVolumeProfile } from './indicators/volumeProfile.ts';
+import { getEMASignal } from './indicators/ema.ts';
+import { getRSISignal } from './indicators/rsi.ts';
+import { getATRSignal } from './indicators/atr.ts';
+import { getVolumeProfileSignal } from './indicators/volumeProfile.ts';
+import type { Kline } from './binance.ts';
+
+export interface Signal {
+  direction: 'long' | 'short' | 'neutral';
+  score: number;
+  reasons: string[];
+  price: number;
+  atrValue: number;
+}
 
 export function generateSignal(
   klines: Kline[],
   enabledIndicators: string[],
-  params: any,
-  minConfluenceScore: number
-): { direction: 'long' | 'short' | 'neutral', score: number, reasons: string[] } {
-  if (klines.length < Math.max(params.ema_slow || 26, params.rsi_period || 14)) {
-    return { direction: 'neutral', score: 0, reasons: ["Not enough data"] };
-  }
+  params: Record<string, number>,
+  minScore: number
+): Signal {
+  const closes = klines.map((k) => k.close);
+  const highs = klines.map((k) => k.high);
+  const lows = klines.map((k) => k.low);
+  const volumes = klines.map((k) => k.volume);
+  const price = closes[closes.length - 1];
 
-  const closePrices = klines.map(k => k.close);
-  const currentPrice = closePrices[closePrices.length - 1];
-  
   let longScore = 0;
   let shortScore = 0;
   const reasons: string[] = [];
+  let atrValue = 0;
+  let totalCriteria = 0;
 
-  // 1. EMA
+  // EMA
   if (enabledIndicators.includes('ema')) {
-    const fastPeriod = params.ema_fast || 12;
-    const slowPeriod = params.ema_slow || 26;
-    const emaFast = calculateEMA(closePrices, fastPeriod);
-    const emaSlow = calculateEMA(closePrices, slowPeriod);
-    
-    const currentFast = emaFast[emaFast.length - 1];
-    const currentSlow = emaSlow[emaSlow.length - 1];
-    
-    if (currentFast > currentSlow && currentPrice > currentFast) {
-      longScore++;
-      reasons.push(`EMA trend up (Fast > Slow and Price > Fast)`);
-    } else if (currentFast < currentSlow && currentPrice < currentFast) {
-      shortScore++;
-      reasons.push(`EMA trend down (Fast < Slow and Price < Fast)`);
+    totalCriteria++;
+    const ema = getEMASignal(closes, params.ema_fast ?? 12, params.ema_slow ?? 26);
+    if (ema) {
+      if (ema.trend === 'up') { longScore++; reasons.push(`EMA trend yukarı (hızlı ${ema.fast.toFixed(2)} > yavaş ${ema.slow.toFixed(2)})`); }
+      else if (ema.trend === 'down') { shortScore++; reasons.push(`EMA trend aşağı (hızlı ${ema.fast.toFixed(2)} < yavaş ${ema.slow.toFixed(2)})`); }
     }
   }
 
-  // 2. RSI
+  // RSI
   if (enabledIndicators.includes('rsi')) {
-    const rsiPeriod = params.rsi_period || 14;
-    const rsi = calculateRSI(closePrices, rsiPeriod);
-    const currentRSI = rsi[rsi.length - 1];
-    
-    // Simple logic: RSI < 30 is oversold (long), > 70 is overbought (short) 
-    // Or trend following: RSI > 50 for long, < 50 for short. Let's use trend following.
-    if (currentRSI > 50 && currentRSI < 70) {
-      longScore++;
-      reasons.push(`RSI (${currentRSI.toFixed(1)}) > 50 (Bullish Momentum)`);
-    } else if (currentRSI < 50 && currentRSI > 30) {
-      shortScore++;
-      reasons.push(`RSI (${currentRSI.toFixed(1)}) < 50 (Bearish Momentum)`);
+    totalCriteria++;
+    const rsi = getRSISignal(closes, params.rsi_period ?? 14);
+    if (rsi) {
+      if (rsi.momentum === 'bullish') { longScore++; reasons.push(`RSI yükselen momentum (${rsi.value.toFixed(1)})`); }
+      else if (rsi.momentum === 'bearish') { shortScore++; reasons.push(`RSI düşen momentum (${rsi.value.toFixed(1)})`); }
     }
   }
 
-  // 3. Volume Profile
+  // ATR (volatilite filtresi)
+  if (enabledIndicators.includes('atr')) {
+    totalCriteria++;
+    const atr = getATRSignal(highs, lows, closes, params.atr_period ?? 14);
+    if (atr) {
+      atrValue = atr.value;
+      if (atr.volatilityOk) {
+        longScore += 0.5; shortScore += 0.5; // her iki yönde de geçerli filtre
+        reasons.push(`ATR volatilite uygun (${atr.value.toFixed(2)})`);
+      } else {
+        reasons.push(`ATR yüksek volatilite - filtre devrede (${atr.value.toFixed(2)})`);
+      }
+    }
+  }
+
+  // Volume Profile
   if (enabledIndicators.includes('volume_profile')) {
-    const vpData = klines.map(k => ({ high: k.high, low: k.low, volume: k.volume }));
-    // Use last 100 candles for VP
-    const vp = calculateVolumeProfile(vpData.slice(-100));
-    
-    if (currentPrice > vp.poc && currentPrice > vp.vah) {
-       longScore++;
-       reasons.push(`Price above Volume POC and VAH (Support)`);
-    } else if (currentPrice < vp.poc && currentPrice < vp.val) {
-       shortScore++;
-       reasons.push(`Price below Volume POC and VAL (Resistance)`);
+    totalCriteria++;
+    const vp = getVolumeProfileSignal(highs, lows, closes, volumes, params.volume_profile_bins ?? 24);
+    if (vp) {
+      if (vp.position === 'above_poc') { longScore++; reasons.push(`Fiyat POC üzerinde (POC: ${vp.poc.toFixed(2)}, VAH: ${vp.vah.toFixed(2)})`); }
+      else if (vp.position === 'below_poc') { shortScore++; reasons.push(`Fiyat POC altında (POC: ${vp.poc.toFixed(2)}, VAL: ${vp.val.toFixed(2)})`); }
     }
   }
 
-  // Evaluate Confluence
-  if (longScore >= minConfluenceScore && longScore > shortScore) {
-    return { direction: 'long', score: longScore, reasons };
-  } else if (shortScore >= minConfluenceScore && shortScore > longScore) {
-    return { direction: 'short', score: shortScore, reasons };
-  }
+  const direction = longScore >= minScore && longScore > shortScore
+    ? 'long'
+    : shortScore >= minScore && shortScore > longScore
+    ? 'short'
+    : 'neutral';
 
-  return { direction: 'neutral', score: Math.max(longScore, shortScore), reasons: [...reasons, "Not enough confluence"] };
+  return {
+    direction,
+    score: Math.max(longScore, shortScore),
+    reasons,
+    price,
+    atrValue,
+  };
 }

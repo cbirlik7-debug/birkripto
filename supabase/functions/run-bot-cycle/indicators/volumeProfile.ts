@@ -1,83 +1,46 @@
-export interface VolumeData {
-  high: number;
-  low: number;
-  volume: number;
+// Volume Profile - POC, VAH, VAL hesaplama
+export interface VolumeProfileResult {
+  poc: number;   // Point of Control
+  vah: number;   // Value Area High
+  val: number;   // Value Area Low
+  position: 'above_poc' | 'below_poc' | 'at_poc';
 }
 
-export interface VolumeProfile {
-  poc: number; // Point of Control
-  vah: number; // Value Area High
-  val: number; // Value Area Low
-}
+export function getVolumeProfileSignal(
+  highs: number[], lows: number[], closes: number[], volumes: number[], bins: number
+): VolumeProfileResult | null {
+  if (highs.length < 10) return null;
+  const minPrice = Math.min(...lows);
+  const maxPrice = Math.max(...highs);
+  const binSize = (maxPrice - minPrice) / bins;
+  if (binSize === 0) return null;
 
-export function calculateVolumeProfile(data: VolumeData[], numBins: number = 24): VolumeProfile {
-  if (data.length === 0) return { poc: 0, vah: 0, val: 0 };
-  
-  let minPrice = data[0].low;
-  let maxPrice = data[0].high;
-  
-  for (const d of data) {
-    if (d.low < minPrice) minPrice = d.low;
-    if (d.high > maxPrice) maxPrice = d.high;
+  const profile: number[] = new Array(bins).fill(0);
+  for (let i = 0; i < closes.length; i++) {
+    const binIdx = Math.min(Math.floor((closes[i] - minPrice) / binSize), bins - 1);
+    profile[binIdx] += volumes[i];
   }
-  
-  // Prevent division by zero if all prices are the same
-  if (maxPrice === minPrice) {
-      return { poc: maxPrice, vah: maxPrice, val: minPrice };
+
+  const pocIdx = profile.indexOf(Math.max(...profile));
+  const poc = minPrice + pocIdx * binSize + binSize / 2;
+  const totalVolume = profile.reduce((a, b) => a + b, 0);
+  const targetVolume = totalVolume * 0.7;
+
+  let accVol = profile[pocIdx];
+  let lo = pocIdx, hi = pocIdx;
+  while (accVol < targetVolume && (lo > 0 || hi < bins - 1)) {
+    const addLow = lo > 0 ? profile[lo - 1] : 0;
+    const addHigh = hi < bins - 1 ? profile[hi + 1] : 0;
+    if (addLow >= addHigh && lo > 0) { lo--; accVol += profile[lo]; }
+    else if (hi < bins - 1) { hi++; accVol += profile[hi]; }
+    else break;
   }
-  
-  const binSize = (maxPrice - minPrice) / numBins;
-  const bins = new Array(numBins).fill(0);
-  
-  for (const d of data) {
-    for (let i = 0; i < numBins; i++) {
-      const binBottom = minPrice + i * binSize;
-      const binTop = minPrice + (i + 1) * binSize;
-      
-      // If candle overlaps with bin
-      if (d.high >= binBottom && d.low <= binTop) {
-         // Simplification: assign volume to overlapping bins (could be distributed proportionally)
-         bins[i] += d.volume; 
-      }
-    }
-  }
-  
-  let maxVol = 0;
-  let pocIndex = 0;
-  let totalVol = 0;
-  
-  for (let i = 0; i < numBins; i++) {
-    totalVol += bins[i];
-    if (bins[i] > maxVol) {
-      maxVol = bins[i];
-      pocIndex = i;
-    }
-  }
-  
-  const pocPrice = minPrice + (pocIndex + 0.5) * binSize;
-  
-  // Value Area (70% of volume)
-  const valueAreaTarget = totalVol * 0.7;
-  let valueAreaVol = maxVol;
-  let upperIndex = pocIndex;
-  let lowerIndex = pocIndex;
-  
-  while (valueAreaVol < valueAreaTarget && (upperIndex < numBins - 1 || lowerIndex > 0)) {
-    const nextUpperVol = upperIndex < numBins - 1 ? bins[upperIndex + 1] : -1;
-    const nextLowerVol = lowerIndex > 0 ? bins[lowerIndex - 1] : -1;
-    
-    if (nextUpperVol >= nextLowerVol && nextUpperVol !== -1) {
-      upperIndex++;
-      valueAreaVol += nextUpperVol;
-    } else if (nextLowerVol !== -1) {
-      lowerIndex--;
-      valueAreaVol += nextLowerVol;
-    }
-  }
-  
+
+  const val = minPrice + lo * binSize;
+  const vah = minPrice + (hi + 1) * binSize;
+  const lastClose = closes[closes.length - 1];
   return {
-    poc: pocPrice,
-    vah: minPrice + (upperIndex + 1) * binSize,
-    val: minPrice + lowerIndex * binSize
+    poc, val, vah,
+    position: lastClose > poc ? 'above_poc' : lastClose < poc ? 'below_poc' : 'at_poc',
   };
 }

@@ -1,0 +1,26 @@
+name: Run Bot Cycle
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # Her 15 dakikada bir (15m timeframe için)
+  workflow_dispatch:           # Manuel tetikleme de mümkün olsun
+
+jobs:
+  trigger-edge-function:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Supabase Edge Function
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${SUPABASE_URL}/functions/v1/run-bot-cycle" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE}" \
+            -H "Content-Type: application/json")
+          echo "HTTP Status: $response"
+          if [ "$response" != "200" ]; then
+            echo "Edge Function çağrısı başarısız: $response"
+            exit 1
+          fi
+          echo "Bot döngüsü başarıyla tetiklendi!"

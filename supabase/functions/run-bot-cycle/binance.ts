@@ -1,3 +1,4 @@
+// Binance Public Kline API - server-side fetch
 export interface Kline {
   openTime: number;
   open: number;
@@ -8,27 +9,18 @@ export interface Kline {
   closeTime: number;
 }
 
-export async function fetchKlines(
-  symbol: string,
-  interval: string,
-  limit: number = 100
-): Promise<Kline[]> {
+export async function fetchKlines(symbol: string, interval: string, limit = 100): Promise<Kline[]> {
   const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch klines from Binance: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  return data.map((k: any) => ({
-    openTime: k[0],
-    open: parseFloat(k[1]),
-    high: parseFloat(k[2]),
-    low: parseFloat(k[3]),
-    close: parseFloat(k[4]),
-    volume: parseFloat(k[5]),
-    closeTime: k[6],
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Binance API error: ${res.status} ${res.statusText}`);
+  const raw: unknown[][] = await res.json();
+  return raw.map((k) => ({
+    openTime: Number(k[0]),
+    open: parseFloat(String(k[1])),
+    high: parseFloat(String(k[2])),
+    low: parseFloat(String(k[3])),
+    close: parseFloat(String(k[4])),
+    volume: parseFloat(String(k[5])),
+    closeTime: Number(k[6]),
   }));
 }

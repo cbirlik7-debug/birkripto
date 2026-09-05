@@ -1,45 +1,98 @@
-export interface Position {
-  id: string;
-  config_id: string;
-  symbol: string;
-  direction: 'long' | 'short';
-  entry_price: number;
-  size: number;
-  stop_loss: number;
-  take_profit: number;
-}
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import type { Signal } from './signalEngine.ts';
 
-export function calculatePositionSize(balance: number, riskPct: number, entryPrice: number, stopLoss: number): number {
-  const riskAmount = balance * (riskPct / 100);
-  const priceRisk = Math.abs(entryPrice - stopLoss);
-  if (priceRisk === 0) return 0;
-  return riskAmount / priceRisk;
-}
+export async function runPaperEngine(
+  supabase: SupabaseClient,
+  configId: string,
+  signal: Signal,
+  symbol: string,
+  slMultiplier: number,
+  tpMultiplier: number,
+  riskPct: number,
+  commissionPct: number
+) {
+  // 1. Açık pozisyonları kontrol et
+  const { data: openPositions } = await supabase
+    .from('positions')
+    .select('*')
+    .eq('config_id', configId)
+    .eq('status', 'open');
 
-export function checkSLTP(position: Position, currentHigh: number, currentLow: number): 'stop_loss' | 'take_profit' | null {
-  if (position.direction === 'long') {
-    // Check Stop Loss first (worst case scenario within the candle)
-    if (currentLow <= position.stop_loss) return 'stop_loss';
-    if (currentHigh >= position.take_profit) return 'take_profit';
-  } else {
-    if (currentHigh >= position.stop_loss) return 'stop_loss';
-    if (currentLow <= position.take_profit) return 'take_profit';
+  const { data: accountData } = await supabase
+    .from('strategy_accounts')
+    .select('*')
+    .eq('config_id', configId)
+    .single();
+
+  if (!accountData) return;
+  let balance = accountData.balance;
+
+  // 2. Açık pozisyonları SL/TP veya ters sinyal kontrolü
+  for (const pos of openPositions ?? []) {
+    let closeReason: string | null = null;
+    let exitPrice = signal.price;
+
+    if (pos.direction === 'long') {
+      if (signal.price <= pos.stop_loss) { closeReason = 'stop_loss'; exitPrice = pos.stop_loss; }
+      else if (signal.price >= pos.take_profit) { closeReason = 'take_profit'; exitPrice = pos.take_profit; }
+      else if (signal.direction === 'short') { closeReason = 'reverse_signal'; }
+    } else {
+      if (signal.price >= pos.stop_loss) { closeReason = 'stop_loss'; exitPrice = pos.stop_loss; }
+      else if (signal.price <= pos.take_profit) { closeReason = 'take_profit'; exitPrice = pos.take_profit; }
+      else if (signal.direction === 'long') { closeReason = 'reverse_signal'; }
+    }
+
+    if (closeReason) {
+      const pnl = pos.direction === 'long'
+        ? (exitPrice - pos.entry_price) * pos.size
+        : (pos.entry_price - exitPrice) * pos.size;
+      const commission = exitPrice * pos.size * (commissionPct / 100);
+      const netPnl = pnl - commission;
+      const pnlPct = (netPnl / accountData.starting_balance) * 100;
+
+      balance += netPnl;
+
+      await supabase.from('trades').insert({
+        position_id: pos.id, config_id: configId, symbol,
+        direction: pos.direction, entry_price: pos.entry_price, exit_price: exitPrice,
+        size: pos.size, pnl: netPnl, pnl_pct: pnlPct,
+        commission, exit_reason: closeReason, opened_at: pos.opened_at,
+      });
+
+      await supabase.from('positions').update({ status: 'closed' }).eq('id', pos.id);
+    }
   }
-  return null;
-}
 
-export function calculatePnL(position: Position, exitPrice: number, commissionPct: number): { pnl: number, pnlPct: number, commission: number } {
-  const isLong = position.direction === 'long';
-  const priceDiff = isLong ? (exitPrice - position.entry_price) : (position.entry_price - exitPrice);
-  
-  const grossPnL = priceDiff * position.size;
-  const entryValue = position.entry_price * position.size;
-  const exitValue = exitPrice * position.size;
-  
-  const commission = (entryValue + exitValue) * (commissionPct / 100);
-  const netPnL = grossPnL - commission;
-  
-  const pnlPct = (netPnL / entryValue) * 100;
-  
-  return { pnl: netPnL, pnlPct, commission };
+  // 3. Yeni pozisyon aç (sadece mevcut açık pozisyon yoksa)
+  const { count: openCount } = await supabase
+    .from('positions').select('id', { count: 'exact', head: true })
+    .eq('config_id', configId).eq('status', 'open');
+
+  if ((openCount ?? 0) === 0 && signal.direction !== 'neutral' && signal.atrValue > 0) {
+    const riskAmount = balance * (riskPct / 100);
+    const slDistance = signal.atrValue * slMultiplier;
+    const size = riskAmount / slDistance;
+    const stopLoss = signal.direction === 'long'
+      ? signal.price - slDistance
+      : signal.price + slDistance;
+    const takeProfit = signal.direction === 'long'
+      ? signal.price + signal.atrValue * tpMultiplier
+      : signal.price - signal.atrValue * tpMultiplier;
+
+    // Giriş komisyonu
+    const entryCommission = signal.price * size * (commissionPct / 100);
+    balance -= entryCommission;
+
+    await supabase.from('positions').insert({
+      config_id: configId, symbol, direction: signal.direction,
+      entry_price: signal.price, size, stop_loss: stopLoss, take_profit: takeProfit,
+    });
+  }
+
+  // 4. Bakiyeyi ve equity snapshot'ı güncelle
+  await supabase.from('strategy_accounts')
+    .update({ balance, updated_at: new Date().toISOString() })
+    .eq('config_id', configId);
+
+  await supabase.from('equity_snapshots').insert({ config_id: configId, balance });
 }
