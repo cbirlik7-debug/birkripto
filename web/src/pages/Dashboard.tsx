@@ -346,13 +346,13 @@ export default function Dashboard() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                       <div>Pozisyon Tutarı: <strong style={{ color: 'var(--accent-blue)' }}>${notional.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
                       <div>Kullanılan Teminat: <strong style={{ color: '#fff' }}>${margin.toFixed(2)}</strong></div>
-                      <div>Giriş: <strong style={{ color: 'var(--text-primary)' }}>${pos.entry_price.toFixed(2)}</strong></div>
-                      <div>Anlık: <strong style={{ color: 'var(--accent-blue)' }}>${livePrice.toFixed(2)}</strong></div>
-                      <div>Miktar: <strong style={{ color: 'var(--text-primary)' }}>{pos.size.toFixed(4)}</strong></div>
+                      <div>Tahmini Komisyon: <strong style={{ color: 'var(--accent-yellow)' }}>${(notional * 0.0008).toFixed(3)}</strong> (%0.08 çift yön)</div>
+                      <div>Miktar: <strong style={{ color: 'var(--text-primary)' }}>{pos.size.toFixed(4)} {pos.symbol.replace('USDT','')}</strong></div>
+                      <div>Giriş / Anlık: <span>${pos.entry_price.toFixed(2)} / <strong style={{ color: 'var(--accent-blue)' }}>${livePrice.toFixed(2)}</strong></span></div>
                       <div>SL / TP: <span style={{ color: 'var(--accent-red)' }}>${pos.stop_loss.toFixed(0)}</span> / <span style={{ color: 'var(--accent-green)' }}>${pos.take_profit.toFixed(0)}</span></div>
                       <div style={{ gridColumn: 'span 2', marginTop: 4, paddingTop: 4, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Anlık PnL: <strong style={{ color: unrealized >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>${unrealized.toFixed(2)}</strong></span>
-                        <span>ROE: <strong style={{ color: roe >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>{roe >= 0 ? '+' : ''}{roe.toFixed(2)}%</strong></span>
+                        <span>Net PnL: <strong style={{ color: (unrealized - notional * 0.0008) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>${(unrealized - notional * 0.0008).toFixed(2)}</strong></span>
+                        <span>Net ROE: <strong style={{ color: roe >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>{roe >= 0 ? '+' : ''}{roe.toFixed(2)}%</strong></span>
                       </div>
                     </div>
                   </div>

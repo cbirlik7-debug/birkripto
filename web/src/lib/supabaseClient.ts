@@ -93,7 +93,7 @@ export interface Trade {
   pnl_pct: number
   commission: number
   leverage?: number
-  exit_reason: 'stop_loss' | 'take_profit' | 'reverse_signal'
+  exit_reason: 'stop_loss' | 'take_profit' | 'reverse_signal' | 'manual_market_close' | string
   opened_at: string
   closed_at: string
 }

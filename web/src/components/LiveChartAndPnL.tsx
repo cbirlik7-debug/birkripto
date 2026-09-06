@@ -105,42 +105,53 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
   const activePosition = positions.find(p => p.symbol === selectedSymbol && p.status === 'open')
   const activeConfig = configs.find(c => c.symbol === selectedSymbol)
 
+  const commissionPct = Number(activeConfig?.commission_pct || 0.04)
+
   // Aktif pozisyon kaldıraç ve tutar hesaplamaları
   const posLeverage = activePosition?.leverage || activeConfig?.leverage || 5
   const notionalValue = activePosition ? activePosition.size * activePosition.entry_price : 0
   const currentNotional = activePosition ? activePosition.size * currentPrice : 0
   const initialMargin = notionalValue / posLeverage
 
+  // Komisyon hesaplamaları (%0.04 Taker fee)
+  const entryCommission = activePosition ? notionalValue * (commissionPct / 100) : 0
+  const estExitCommission = activePosition ? currentNotional * (commissionPct / 100) : 0
+  const totalCommission = entryCommission + estExitCommission
+
   // Canlı PnL & ROE Hesaplamaları
-  let unrealizedPnL = 0
+  let grossPnL = 0
+  let netPnL = 0
   let priceChangePct = 0
-  let roePercent = 0 // Return on Equity (Kaldıraçlı Getiri %)
+  let grossRoePercent = 0
+  let netRoePercent = 0
   let distanceToSL = 0
   let distanceToTP = 0
   let estLiquidationPrice = 0
 
   if (activePosition && currentPrice > 0) {
     if (activePosition.direction === 'long') {
-      unrealizedPnL = (currentPrice - activePosition.entry_price) * activePosition.size
+      grossPnL = (currentPrice - activePosition.entry_price) * activePosition.size
       priceChangePct = ((currentPrice - activePosition.entry_price) / activePosition.entry_price) * 100
-      roePercent = priceChangePct * posLeverage
       distanceToSL = ((currentPrice - activePosition.stop_loss) / currentPrice) * 100
       distanceToTP = ((activePosition.take_profit - currentPrice) / currentPrice) * 100
-      // Yaklaşık likidasyon fiyatı
       estLiquidationPrice = activePosition.entry_price * (1 - (1 / posLeverage) * 0.9)
     } else {
-      unrealizedPnL = (activePosition.entry_price - currentPrice) * activePosition.size
+      grossPnL = (activePosition.entry_price - currentPrice) * activePosition.size
       priceChangePct = ((activePosition.entry_price - currentPrice) / activePosition.entry_price) * 100
-      roePercent = priceChangePct * posLeverage
       distanceToSL = ((activePosition.stop_loss - currentPrice) / currentPrice) * 100
       distanceToTP = ((currentPrice - activePosition.take_profit) / currentPrice) * 100
       estLiquidationPrice = activePosition.entry_price * (1 + (1 / posLeverage) * 0.9)
     }
+    netPnL = grossPnL - totalCommission
+    grossRoePercent = priceChangePct * posLeverage
+    netRoePercent = initialMargin > 0 ? (netPnL / initialMargin) * 100 : grossRoePercent
   }
 
   // Yeni açılacak pozisyon simülasyonu
   const plannedNotional = selectedMargin * selectedLeverage
   const plannedQuantity = currentPrice > 0 ? plannedNotional / currentPrice : 0
+  const plannedEntryFee = plannedNotional * (commissionPct / 100)
+  const plannedRoundTripFee = plannedEntryFee * 2
 
   // Fiyat değişim rengi (ani tick)
   const isUp = currentPriceData?.prevPrice && currentPrice > currentPriceData.prevPrice
@@ -195,10 +206,11 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
     try {
       await supabase.from('positions').update({ status: 'closed' }).eq('id', activePosition.id)
 
-      const commission = currentPrice * activePosition.size * 0.0004
-      const netPnl = unrealizedPnL - commission
+      const exitCommission = currentPrice * activePosition.size * (commissionPct / 100)
+      const totalTradeCommission = entryCommission + exitCommission
+      const finalNetPnl = grossPnL - totalTradeCommission
       const startBal = Number(activeConfig.account?.starting_balance || 10000)
-      const pnlPct = (netPnl / startBal) * 100
+      const pnlPct = (finalNetPnl / startBal) * 100
 
       await supabase.from('trades').insert({
         position_id: activePosition.id,
@@ -208,15 +220,15 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
         entry_price: activePosition.entry_price,
         exit_price: currentPrice,
         size: activePosition.size,
-        pnl: netPnl,
+        pnl: finalNetPnl,
         pnl_pct: pnlPct,
-        commission,
+        commission: totalTradeCommission,
         leverage: posLeverage,
         exit_reason: 'manual_market_close',
         opened_at: activePosition.opened_at,
       })
 
-      const newBal = Number(activeConfig.account?.balance || 10000) + netPnl
+      const newBal = Number(activeConfig.account?.balance || 10000) + finalNetPnl
       await supabase.from('strategy_accounts').update({
         balance: newBal,
         updated_at: new Date().toISOString()
@@ -227,7 +239,7 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
         balance: newBal,
       })
 
-      setActionNotice(`✓ Pozisyon kapatıldı! Realize Net PnL: ${netPnl >= 0 ? '+' : ''}$${netPnl.toFixed(2)} (${roePercent >= 0 ? '+' : ''}${roePercent.toFixed(2)}% ROE)`)
+      setActionNotice(`✓ Pozisyon kapatıldı! Net PnL: ${finalNetPnl >= 0 ? '+' : ''}$${finalNetPnl.toFixed(2)} (Toplam Komisyon: -$${totalTradeCommission.toFixed(3)})`)
       setTimeout(() => setActionNotice(null), 6000)
       onRefresh()
     } catch (err: any) {
@@ -430,43 +442,55 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
             {/* POZİSYON VARSA: Kaldıraç, Net Tutar ve Canlı ROE Monitörü */}
             {activePosition ? (
               <div>
-                {/* Büyük PnL & ROE Göstergesi */}
+                {/* Büyük PnL & ROE Göstergesi (Komisyon Dahil Net) */}
                 <div style={{
-                  background: unrealizedPnL >= 0 ? 'rgba(16, 217, 160, 0.1)' : 'rgba(244, 63, 94, 0.1)',
-                  border: `1px solid ${unrealizedPnL >= 0 ? 'rgba(16, 217, 160, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                  background: netPnL >= 0 ? 'rgba(16, 217, 160, 0.1)' : 'rgba(244, 63, 94, 0.1)',
+                  border: `1px solid ${netPnL >= 0 ? 'rgba(16, 217, 160, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
                   borderRadius: 12,
                   padding: '16px 14px',
                   textAlign: 'center',
                   marginBottom: 16,
                 }}>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 2 }}>
-                    CANLI KÂR / ZARAR (PnL & ROE)
+                    CANLI NET KÂR / ZARAR (Komisyon Düşülmüş)
                   </div>
                   <div style={{
                     fontSize: '1.9rem',
                     fontWeight: 800,
-                    color: unrealizedPnL >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
+                    color: netPnL >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
                     letterSpacing: '-0.02em',
                   }}>
-                    {unrealizedPnL >= 0 ? '+' : ''}${unrealizedPnL.toFixed(2)}
+                    {netPnL >= 0 ? '+' : ''}${netPnL.toFixed(2)}
                   </div>
                   <div style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 6,
-                    fontSize: '1rem',
+                    fontSize: '0.95rem',
                     fontWeight: 800,
-                    color: roePercent >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
+                    color: netRoePercent >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
                     marginTop: 2
                   }}>
-                    <span>{roePercent >= 0 ? '+' : ''}{roePercent.toFixed(2)}% ROE</span>
+                    <span>{netRoePercent >= 0 ? '+' : ''}{netRoePercent.toFixed(2)}% Net ROE</span>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                      ({posLeverage}x kaldıraçlı getiri)
+                      ({posLeverage}x kaldıraç ile)
                     </span>
+                  </div>
+                  <div style={{
+                    fontSize: '0.72rem',
+                    color: 'var(--text-muted)',
+                    marginTop: 6,
+                    paddingTop: 6,
+                    borderTop: '1px solid rgba(255,255,255,0.08)',
+                    display: 'flex',
+                    justifyContent: 'space-around'
+                  }}>
+                    <span>Brüt PnL: <strong style={{ color: grossPnL >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>${grossPnL >= 0 ? '+' : ''}${grossPnL.toFixed(2)}</strong></span>
+                    <span>Toplam Komisyon: <strong style={{ color: 'var(--accent-yellow)' }}>-${totalCommission.toFixed(3)} USDT</strong></span>
                   </div>
                 </div>
 
-                {/* Pozisyon Büyüklüğü ve Kaldıraç Ayrıntı Kartı */}
+                {/* Pozisyon Büyüklüğü, Kaldıraç ve Komisyon Ayrıntı Kartı */}
                 <div style={{
                   background: 'var(--bg-secondary)',
                   border: '1px solid var(--border)',
@@ -496,6 +520,22 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
                     <div style={{ fontSize: '0.7rem', color: 'var(--accent-yellow)' }}>
                       {posLeverage}x Kaldıraç ile
                     </div>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Ödenen Giriş Komisyonu</div>
+                    <div style={{ fontWeight: 700, marginTop: 1, color: 'var(--accent-yellow)' }}>
+                      ${entryCommission.toFixed(3)} USDT
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>%{commissionPct} Taker</div>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Tahmini Çıkış Komisyonu</div>
+                    <div style={{ fontWeight: 700, marginTop: 1, color: 'var(--accent-yellow)' }}>
+                      ${estExitCommission.toFixed(3)} USDT
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Anlık piyasadan</div>
                   </div>
 
                   <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
@@ -639,28 +679,57 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
                     </div>
                   </div>
 
-                  {/* 3. Hesaplanan Toplam Pozisyon Özeti */}
+                  {/* 3. Hesaplanan Toplam Pozisyon ve Komisyon Özeti */}
                   <div style={{
                     background: 'var(--bg-card)',
                     borderRadius: 8,
-                    padding: '10px 12px',
+                    padding: '12px 14px',
                     marginBottom: 16,
                     border: '1px solid rgba(59,130,246,0.25)',
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
+                    flexDirection: 'column',
+                    gap: 8
                   }}>
-                    <div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Toplam Açılacak İşlem Büyüklüğü</div>
-                      <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--accent-blue)', marginTop: 2 }}>
-                        ${plannedNotional.toLocaleString('tr-TR')} USDT
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Toplam Açılacak İşlem Büyüklüğü</div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--accent-blue)', marginTop: 1 }}>
+                          ${plannedNotional.toLocaleString('tr-TR')} USDT
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Miktar ({selectedSymbol.replace('USDT','')})</div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: 1 }}>
+                          {plannedQuantity > 0 ? plannedQuantity.toFixed(4) : '...'}
+                        </div>
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Miktar ({selectedSymbol.replace('USDT','')})</div>
-                      <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
-                        {plannedQuantity > 0 ? plannedQuantity.toFixed(4) : '...'}
-                      </div>
+
+                    <div style={{
+                      borderTop: '1px solid var(--border)',
+                      paddingTop: 8,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '0.75rem'
+                    }}>
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        Tahmini Giriş Komisyonu (%{commissionPct} Taker):
+                      </span>
+                      <strong style={{ color: 'var(--accent-yellow)' }}>
+                        ${plannedEntryFee.toFixed(3)} USDT
+                      </strong>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '0.72rem',
+                      color: 'var(--text-muted)'
+                    }}>
+                      <span>Tahmini Çift Yönlü Komisyon (Giriş + Çıkış):</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>${plannedRoundTripFee.toFixed(3)} USDT</span>
                     </div>
                   </div>
 
