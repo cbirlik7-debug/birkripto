@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase, BotConfig, StrategyAccount, Trade, Signal, Position } from '../lib/supabaseClient'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { RefreshCw, RotateCcw, CheckCircle2, TrendingUp, TrendingDown, DollarSign, Activity, Zap } from 'lucide-react'
+import LiveChartAndPnL from '../components/LiveChartAndPnL'
 
 interface DashboardData {
   configs: (BotConfig & { account?: StrategyAccount })[]
@@ -208,6 +209,13 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* Canlı TradingView Mum Grafiği ve Anlık Kâr/Zarar Paneli */}
+      <LiveChartAndPnL
+        configs={data?.configs ?? []}
+        positions={data?.openPositions ?? []}
+        onRefresh={loadData}
+      />
 
       {/* Stat Cards */}
       <div className="grid-4" style={{ marginBottom: 24 }}>

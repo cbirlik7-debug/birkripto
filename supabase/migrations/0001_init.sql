@@ -91,27 +91,33 @@ alter table trades enable row level security;
 alter table signals enable row level security;
 alter table equity_snapshots enable row level security;
 
--- anon rolüne SELECT izni
+-- anon rolüne tam paper trading izinleri
+drop policy if exists "anon_all_bot_config" on bot_config;
 drop policy if exists "anon_select_bot_config" on bot_config;
 create policy "anon_select_bot_config" on bot_config for select to anon using (true);
 
 drop policy if exists "anon_update_bot_config" on bot_config;
 create policy "anon_update_bot_config" on bot_config for update to anon using (true) with check (true);
 
+drop policy if exists "anon_all_strategy_accounts" on strategy_accounts;
 drop policy if exists "anon_select_strategy_accounts" on strategy_accounts;
-create policy "anon_select_strategy_accounts" on strategy_accounts for select to anon using (true);
+create policy "anon_all_strategy_accounts" on strategy_accounts for all to anon using (true) with check (true);
 
+drop policy if exists "anon_all_positions" on positions;
 drop policy if exists "anon_select_positions" on positions;
-create policy "anon_select_positions" on positions for select to anon using (true);
+create policy "anon_all_positions" on positions for all to anon using (true) with check (true);
 
+drop policy if exists "anon_all_trades" on trades;
 drop policy if exists "anon_select_trades" on trades;
-create policy "anon_select_trades" on trades for select to anon using (true);
+create policy "anon_all_trades" on trades for all to anon using (true) with check (true);
 
+drop policy if exists "anon_all_signals" on signals;
 drop policy if exists "anon_select_signals" on signals;
-create policy "anon_select_signals" on signals for select to anon using (true);
+create policy "anon_all_signals" on signals for all to anon using (true) with check (true);
 
+drop policy if exists "anon_all_equity_snapshots" on equity_snapshots;
 drop policy if exists "anon_select_equity_snapshots" on equity_snapshots;
-create policy "anon_select_equity_snapshots" on equity_snapshots for select to anon using (true);
+create policy "anon_all_equity_snapshots" on equity_snapshots for all to anon using (true) with check (true);
 
 -- service_role tam yetki
 drop policy if exists "service_all_bot_config" on bot_config;
