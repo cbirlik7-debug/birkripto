@@ -44,11 +44,13 @@ export async function runPaperEngine(
     }
 
     if (closeReason) {
-      const pnl = pos.direction === 'long'
+      const grossPnl = pos.direction === 'long'
         ? (exitPrice - pos.entry_price) * pos.size
         : (pos.entry_price - exitPrice) * pos.size;
-      const commission = exitPrice * pos.size * (commissionPct / 100);
-      const netPnl = pnl - commission;
+      const entryCommission = pos.entry_price * pos.size * (commissionPct / 100);
+      const exitCommission = exitPrice * pos.size * (commissionPct / 100);
+      const totalCommission = entryCommission + exitCommission;
+      const netPnl = grossPnl - totalCommission;
       const pnlPct = (netPnl / accountData.starting_balance) * 100;
 
       balance += netPnl;
@@ -57,7 +59,7 @@ export async function runPaperEngine(
         position_id: pos.id, config_id: configId, symbol,
         direction: pos.direction, entry_price: pos.entry_price, exit_price: exitPrice,
         size: pos.size, pnl: netPnl, pnl_pct: pnlPct,
-        commission, leverage: pos.leverage || leverage, exit_reason: closeReason, opened_at: pos.opened_at,
+        commission: totalCommission, leverage: pos.leverage || leverage, exit_reason: closeReason, opened_at: pos.opened_at,
       });
 
       await supabase.from('positions').update({ status: 'closed' }).eq('id', pos.id);
@@ -79,10 +81,6 @@ export async function runPaperEngine(
     const takeProfit = signal.direction === 'long'
       ? signal.price + signal.atrValue * tpMultiplier
       : signal.price - signal.atrValue * tpMultiplier;
-
-    // Giriş komisyonu
-    const entryCommission = signal.price * size * (commissionPct / 100);
-    balance -= entryCommission;
 
     await supabase.from('positions').insert({
       config_id: configId, symbol, direction: signal.direction,
