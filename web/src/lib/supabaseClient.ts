@@ -54,6 +54,7 @@ export interface BotConfig {
   tp_atr_multiplier: number
   risk_per_trade_pct: number
   commission_pct: number
+  leverage?: number
   created_at: string
 }
 
@@ -74,6 +75,7 @@ export interface Position {
   size: number
   stop_loss: number
   take_profit: number
+  leverage?: number
   status: 'open' | 'closed'
   opened_at: string
 }
@@ -90,6 +92,7 @@ export interface Trade {
   pnl: number
   pnl_pct: number
   commission: number
+  leverage?: number
   exit_reason: 'stop_loss' | 'take_profit' | 'reverse_signal'
   opened_at: string
   closed_at: string

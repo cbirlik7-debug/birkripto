@@ -64,7 +64,8 @@ Deno.serve(async (req) => {
           cfg.sl_atr_multiplier,
           cfg.tp_atr_multiplier,
           cfg.risk_per_trade_pct,
-          cfg.commission_pct
+          cfg.commission_pct,
+          cfg.leverage || 5
         );
 
         results.push({

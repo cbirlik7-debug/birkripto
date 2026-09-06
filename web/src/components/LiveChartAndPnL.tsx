@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase, Position, BotConfig, StrategyAccount } from '../lib/supabaseClient'
-import { TrendingUp, TrendingDown, Play, XCircle, AlertCircle, ShieldAlert, Target, DollarSign, Activity } from 'lucide-react'
+import { TrendingUp, TrendingDown, XCircle, Activity, Gauge, DollarSign, Layers } from 'lucide-react'
 
 interface LivePriceData {
   price: number
@@ -23,16 +23,23 @@ const SYMBOLS = [
   { symbol: 'SOLUSDT', name: 'Solana', icon: '◎' },
 ]
 
+const LEVERAGE_OPTIONS = [1, 2, 3, 5, 10, 20]
+const MARGIN_PRESETS = [100, 250, 500, 1000, 2500]
+
 export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props) {
   const [selectedSymbol, setSelectedSymbol] = useState<'BTCUSDT' | 'ETHUSDT' | 'SOLUSDT'>('BTCUSDT')
   const [livePrices, setLivePrices] = useState<Record<string, LivePriceData>>({})
   const [actionLoading, setActionLoading] = useState(false)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
+  
+  // Kaldıraç ve Teminat Tercihleri
+  const [selectedLeverage, setSelectedLeverage] = useState<number>(5)
+  const [selectedMargin, setSelectedMargin] = useState<number>(500) // USDT Teminat
+
   const wsRef = useRef<WebSocket | null>(null)
 
   // 1. Binance Live WebSocket Ticker
   useEffect(() => {
-    // İlk değerleri REST API'den hızlıca doldur
     async function fetchInitialTickers() {
       try {
         const res = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT","ETHUSDT","SOLUSDT"]')
@@ -54,7 +61,6 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
     }
     fetchInitialTickers()
 
-    // Canlı WebSocket bağlantısı
     const streamNames = 'btcusdt@ticker/ethusdt@ticker/solusdt@ticker'
     const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${streamNames}`)
     wsRef.current = ws
@@ -99,25 +105,42 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
   const activePosition = positions.find(p => p.symbol === selectedSymbol && p.status === 'open')
   const activeConfig = configs.find(c => c.symbol === selectedSymbol)
 
-  // Canlı PnL Hesaplamaları
+  // Aktif pozisyon kaldıraç ve tutar hesaplamaları
+  const posLeverage = activePosition?.leverage || activeConfig?.leverage || 5
+  const notionalValue = activePosition ? activePosition.size * activePosition.entry_price : 0
+  const currentNotional = activePosition ? activePosition.size * currentPrice : 0
+  const initialMargin = notionalValue / posLeverage
+
+  // Canlı PnL & ROE Hesaplamaları
   let unrealizedPnL = 0
-  let pnlPercent = 0
+  let priceChangePct = 0
+  let roePercent = 0 // Return on Equity (Kaldıraçlı Getiri %)
   let distanceToSL = 0
   let distanceToTP = 0
+  let estLiquidationPrice = 0
 
   if (activePosition && currentPrice > 0) {
     if (activePosition.direction === 'long') {
       unrealizedPnL = (currentPrice - activePosition.entry_price) * activePosition.size
-      pnlPercent = ((currentPrice - activePosition.entry_price) / activePosition.entry_price) * 100
+      priceChangePct = ((currentPrice - activePosition.entry_price) / activePosition.entry_price) * 100
+      roePercent = priceChangePct * posLeverage
       distanceToSL = ((currentPrice - activePosition.stop_loss) / currentPrice) * 100
       distanceToTP = ((activePosition.take_profit - currentPrice) / currentPrice) * 100
+      // Yaklaşık likidasyon fiyatı
+      estLiquidationPrice = activePosition.entry_price * (1 - (1 / posLeverage) * 0.9)
     } else {
       unrealizedPnL = (activePosition.entry_price - currentPrice) * activePosition.size
-      pnlPercent = ((activePosition.entry_price - currentPrice) / activePosition.entry_price) * 100
+      priceChangePct = ((activePosition.entry_price - currentPrice) / activePosition.entry_price) * 100
+      roePercent = priceChangePct * posLeverage
       distanceToSL = ((activePosition.stop_loss - currentPrice) / currentPrice) * 100
       distanceToTP = ((currentPrice - activePosition.take_profit) / currentPrice) * 100
+      estLiquidationPrice = activePosition.entry_price * (1 + (1 / posLeverage) * 0.9)
     }
   }
+
+  // Yeni açılacak pozisyon simülasyonu
+  const plannedNotional = selectedMargin * selectedLeverage
+  const plannedQuantity = currentPrice > 0 ? plannedNotional / currentPrice : 0
 
   // Fiyat değişim rengi (ani tick)
   const isUp = currentPriceData?.prevPrice && currentPrice > currentPriceData.prevPrice
@@ -131,16 +154,14 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
     }
     setActionLoading(true)
     try {
-      const balance = Number(activeConfig.account?.balance || 10000)
-      const riskAmount = balance * (Number(activeConfig.risk_per_trade_pct || 2) / 100)
+      const notional = selectedMargin * selectedLeverage
+      const size = notional / currentPrice
       const slDistance = currentPrice * 0.015 // %1.5 SL mesafesi
       const tpDistance = currentPrice * 0.03  // %3.0 TP mesafesi
-      const size = riskAmount / slDistance
 
       const stopLoss = direction === 'long' ? currentPrice - slDistance : currentPrice + slDistance
       const takeProfit = direction === 'long' ? currentPrice + tpDistance : currentPrice - tpDistance
 
-      // Supabase positions tablosuna ekle
       const { error } = await supabase.from('positions').insert({
         config_id: activeConfig.id,
         symbol: selectedSymbol,
@@ -149,13 +170,14 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
         size,
         stop_loss: stopLoss,
         take_profit: takeProfit,
+        leverage: selectedLeverage,
         status: 'open',
       })
 
       if (error) throw error
 
-      setActionNotice(`✓ ${selectedSymbol} için ${direction.toUpperCase()} pozisyonu $${currentPrice.toLocaleString()} fiyattan açıldı!`)
-      setTimeout(() => setActionNotice(null), 5000)
+      setActionNotice(`✓ ${selectedSymbol} için ${selectedLeverage}x kaldıraçla $${notional.toLocaleString()} tutarında ${direction.toUpperCase()} pozisyonu açıldı! (Teminat: $${selectedMargin})`)
+      setTimeout(() => setActionNotice(null), 6000)
       onRefresh()
     } catch (err: any) {
       alert(`Pozisyon açma hatası: ${err.message}`)
@@ -171,10 +193,8 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
 
     setActionLoading(true)
     try {
-      // 1. Pozisyonu kapat
       await supabase.from('positions').update({ status: 'closed' }).eq('id', activePosition.id)
 
-      // 2. Trade tablosuna kaydet
       const commission = currentPrice * activePosition.size * 0.0004
       const netPnl = unrealizedPnL - commission
       const startBal = Number(activeConfig.account?.starting_balance || 10000)
@@ -191,24 +211,23 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
         pnl: netPnl,
         pnl_pct: pnlPct,
         commission,
+        leverage: posLeverage,
         exit_reason: 'manual_market_close',
         opened_at: activePosition.opened_at,
       })
 
-      // 3. Hesap bakiyesini güncelle
       const newBal = Number(activeConfig.account?.balance || 10000) + netPnl
       await supabase.from('strategy_accounts').update({
         balance: newBal,
         updated_at: new Date().toISOString()
       }).eq('config_id', activeConfig.id)
 
-      // 4. Equity snapshot ekle
       await supabase.from('equity_snapshots').insert({
         config_id: activeConfig.id,
         balance: newBal,
       })
 
-      setActionNotice(`✓ Pozisyon kapatıldı! Realize Net PnL: ${netPnl >= 0 ? '+' : ''}$${netPnl.toFixed(2)}`)
+      setActionNotice(`✓ Pozisyon kapatıldı! Realize Net PnL: ${netPnl >= 0 ? '+' : ''}$${netPnl.toFixed(2)} (${roePercent >= 0 ? '+' : ''}${roePercent.toFixed(2)}% ROE)`)
       setTimeout(() => setActionNotice(null), 6000)
       onRefresh()
     } catch (err: any) {
@@ -230,11 +249,11 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
         marginBottom: 16
       }}>
         <div style={{ display: 'flex', gap: 10 }}>
-          {SYMBOLS.map(({ symbol, name, icon }) => {
+          {SYMBOLS.map(({ symbol, icon }) => {
             const isSelected = selectedSymbol === symbol
             const symPrice = livePrices[symbol]?.price
             const symChange = livePrices[symbol]?.change24h || 0
-            const hasPos = positions.some(p => p.symbol === symbol && p.status === 'open')
+            const pos = positions.find(p => p.symbol === symbol && p.status === 'open')
 
             return (
               <button
@@ -260,14 +279,17 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
                 <div style={{ textAlign: 'left' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span>{symbol}</span>
-                    {hasPos && (
+                    {pos && (
                       <span style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: '50%',
-                        background: 'var(--accent-yellow)',
-                        boxShadow: '0 0 6px var(--accent-yellow)'
-                      }} />
+                        fontSize: '0.65rem',
+                        padding: '1px 5px',
+                        borderRadius: 4,
+                        background: pos.direction === 'long' ? 'rgba(16,217,160,0.2)' : 'rgba(244,63,94,0.2)',
+                        color: pos.direction === 'long' ? 'var(--accent-green)' : 'var(--accent-red)',
+                        fontWeight: 700
+                      }}>
+                        {pos.leverage || 5}x {pos.direction.toUpperCase()}
+                      </span>
                     )}
                   </div>
                   <div style={{ fontSize: '0.75rem', fontWeight: 500, color: symChange >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
@@ -280,7 +302,7 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
           })}
         </div>
 
-        {/* Canlı Binance WebSocket Durum Rozeti */}
+        {/* Canlı WebSocket Rozeti */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -312,14 +334,14 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
         </div>
       )}
 
-      {/* Grid: Sol Taraf TradingView Canlı Mum Grafiği (2 birim), Sağ Taraf Anlık Kâr/Zarar ve Pozisyon Paneli (1 birim) */}
+      {/* Grid: Sol Taraf TradingView Canlı Mum Grafiği (2 birim), Sağ Taraf Kaldıraç, Tutar & Pozisyon Paneli (1 birim) */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 2fr) minmax(320px, 1fr)',
+        gridTemplateColumns: 'minmax(0, 2fr) minmax(340px, 1fr)',
         gap: 18,
       }}>
         {/* Canlı TradingView Mum Grafiği */}
-        <div className="card" style={{ padding: 0, overflow: 'hidden', height: 500, display: 'flex', flexDirection: 'column' }}>
+        <div className="card" style={{ padding: 0, overflow: 'hidden', minHeight: 520, display: 'flex', flexDirection: 'column' }}>
           <div style={{
             padding: '12px 16px',
             borderBottom: '1px solid var(--border)',
@@ -333,6 +355,18 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
               <span style={{ fontSize: '0.75rem', background: 'rgba(59,130,246,0.2)', color: 'var(--accent-blue)', padding: '2px 8px', borderRadius: 4 }}>
                 15 Dakikalık (15m)
               </span>
+              {activePosition && (
+                <span style={{
+                  fontSize: '0.75rem',
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontWeight: 700,
+                  background: activePosition.direction === 'long' ? 'rgba(16,217,160,0.2)' : 'rgba(244,63,94,0.2)',
+                  color: activePosition.direction === 'long' ? 'var(--accent-green)' : 'var(--accent-red)'
+                }}>
+                  {posLeverage}x KALDIRAÇLI POZİSYON AKTİF
+                </span>
+              )}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -354,7 +388,7 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
             </div>
           </div>
 
-          <div style={{ flex: 1, width: '100%', height: '100%' }}>
+          <div style={{ flex: 1, width: '100%', minHeight: 460 }}>
             <iframe
               key={selectedSymbol}
               src={`https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=BINANCE%3A${selectedSymbol}&interval=15&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=131d35&studies=%5B%22MASimple%40tv-basicstudies%22%2C%22RSI%40tv-basicstudies%22%5D&theme=dark&style=1&timezone=Europe%2FIstanbul&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&locale=tr`}
@@ -364,40 +398,52 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
           </div>
         </div>
 
-        {/* Sağ Panel: Anlık Kâr / Zarar & Pozisyon Yönetimi */}
+        {/* Sağ Panel: Kaldıraç, İşlem Büyüklüğü ve Anlık Kâr/Zarar Monitörü */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Activity size={18} color="var(--accent-blue)" />
-                Anlık Pozisyon & PnL
+                Pozisyon & Kaldıraç Durumu
               </h3>
               {activePosition ? (
-                <span className={`badge badge-${activePosition.direction}`}>
-                  {activePosition.direction.toUpperCase()} AÇIK
-                </span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: 'rgba(245,158,11,0.2)',
+                    color: 'var(--accent-yellow)',
+                    fontWeight: 700
+                  }}>
+                    {posLeverage}x İZOLE
+                  </span>
+                  <span className={`badge badge-${activePosition.direction}`}>
+                    {activePosition.direction.toUpperCase()}
+                  </span>
+                </div>
               ) : (
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Pozisyon Yok</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Açık İşlem Yok</span>
               )}
             </div>
 
-            {/* Pozisyon Varsa: Canlı Kâr/Zarar Göstergesi */}
+            {/* POZİSYON VARSA: Kaldıraç, Net Tutar ve Canlı ROE Monitörü */}
             {activePosition ? (
               <div>
-                {/* Büyük PnL Göstergesi */}
+                {/* Büyük PnL & ROE Göstergesi */}
                 <div style={{
                   background: unrealizedPnL >= 0 ? 'rgba(16, 217, 160, 0.1)' : 'rgba(244, 63, 94, 0.1)',
                   border: `1px solid ${unrealizedPnL >= 0 ? 'rgba(16, 217, 160, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
                   borderRadius: 12,
-                  padding: '20px 16px',
+                  padding: '16px 14px',
                   textAlign: 'center',
-                  marginBottom: 18,
+                  marginBottom: 16,
                 }}>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 4 }}>
-                    ANLIK GERÇEKLEŞMEMİŞ PnL
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 2 }}>
+                    CANLI KÂR / ZARAR (PnL & ROE)
                   </div>
                   <div style={{
-                    fontSize: '2rem',
+                    fontSize: '1.9rem',
                     fontWeight: 800,
                     color: unrealizedPnL >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
                     letterSpacing: '-0.02em',
@@ -405,56 +451,84 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
                     {unrealizedPnL >= 0 ? '+' : ''}${unrealizedPnL.toFixed(2)}
                   </div>
                   <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
                     fontSize: '1rem',
-                    fontWeight: 700,
-                    color: pnlPercent >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
+                    fontWeight: 800,
+                    color: roePercent >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
                     marginTop: 2
                   }}>
-                    {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
+                    <span>{roePercent >= 0 ? '+' : ''}{roePercent.toFixed(2)}% ROE</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                      ({posLeverage}x kaldıraçlı getiri)
+                    </span>
                   </div>
                 </div>
 
-                {/* Detay Bilgileri */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: '0.82rem', marginBottom: 18 }}>
-                  <div style={{ background: 'var(--bg-secondary)', padding: '10px 12px', borderRadius: 8 }}>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Giriş Fiyatı</div>
-                    <div style={{ fontWeight: 700, marginTop: 2 }}>${activePosition.entry_price.toLocaleString()}</div>
+                {/* Pozisyon Büyüklüğü ve Kaldıraç Ayrıntı Kartı */}
+                <div style={{
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  padding: '12px 14px',
+                  marginBottom: 14,
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 10,
+                  fontSize: '0.8rem'
+                }}>
+                  <div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Toplam İşlem Tutarı (Notional)</div>
+                    <div style={{ fontWeight: 800, color: 'var(--accent-blue)', fontSize: '0.95rem', marginTop: 2 }}>
+                      ${notionalValue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                      {activePosition.size.toFixed(4)} {selectedSymbol.replace('USDT','')}
+                    </div>
                   </div>
-                  <div style={{ background: 'var(--bg-secondary)', padding: '10px 12px', borderRadius: 8 }}>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Anlık Fiyat</div>
-                    <div style={{ fontWeight: 700, marginTop: 2, color: isUp ? 'var(--accent-green)' : isDown ? 'var(--accent-red)' : '#fff' }}>
+
+                  <div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Kullanılan Teminat (Margin)</div>
+                    <div style={{ fontWeight: 800, color: '#fff', fontSize: '0.95rem', marginTop: 2 }}>
+                      ${initialMargin.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--accent-yellow)' }}>
+                      {posLeverage}x Kaldıraç ile
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Giriş Fiyatı</div>
+                    <div style={{ fontWeight: 700, marginTop: 1 }}>${activePosition.entry_price.toLocaleString()}</div>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Anlık Fiyat</div>
+                    <div style={{ fontWeight: 700, marginTop: 1, color: isUp ? 'var(--accent-green)' : isDown ? 'var(--accent-red)' : '#fff' }}>
                       ${currentPrice.toLocaleString()}
                     </div>
                   </div>
-                  <div style={{ background: 'rgba(244, 63, 94, 0.08)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(244, 63, 94, 0.2)' }}>
-                    <div style={{ color: 'var(--accent-red)', fontSize: '0.75rem' }}>Stop Loss (SL)</div>
-                    <div style={{ fontWeight: 700, marginTop: 2 }}>${activePosition.stop_loss.toLocaleString()}</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 1 }}>
-                      {distanceToSL.toFixed(1)}% mesafe
-                    </div>
-                  </div>
-                  <div style={{ background: 'rgba(16, 217, 160, 0.08)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(16, 217, 160, 0.2)' }}>
-                    <div style={{ color: 'var(--accent-green)', fontSize: '0.75rem' }}>Take Profit (TP)</div>
-                    <div style={{ fontWeight: 700, marginTop: 2 }}>${activePosition.take_profit.toLocaleString()}</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 1 }}>
-                      {distanceToTP.toFixed(1)}% mesafe
-                    </div>
-                  </div>
                 </div>
 
-                {/* SL / Fiyat / TP Mesafe Çubuğu */}
-                <div style={{ marginBottom: 20 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6 }}>
-                    <span>SL: ${activePosition.stop_loss.toFixed(0)}</span>
-                    <span style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>Fiyat: ${currentPrice.toFixed(0)}</span>
-                    <span>TP: ${activePosition.take_profit.toFixed(0)}</span>
+                {/* Risk Seviyeleri: SL, TP ve Tahmini Likidasyon Fiyatı */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, fontSize: '0.75rem', marginBottom: 16 }}>
+                  <div style={{ background: 'rgba(244, 63, 94, 0.08)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(244, 63, 94, 0.2)' }}>
+                    <div style={{ color: 'var(--accent-red)', fontWeight: 600 }}>Stop Loss</div>
+                    <div style={{ fontWeight: 700, marginTop: 2 }}>${activePosition.stop_loss.toLocaleString()}</div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{distanceToSL.toFixed(1)}%</div>
                   </div>
-                  <div style={{ height: 6, background: 'var(--bg-secondary)', borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
-                    <div style={{
-                      flex: Math.max(0, Math.min(100, (currentPrice - activePosition.stop_loss) / (activePosition.take_profit - activePosition.stop_loss) * 100)),
-                      background: unrealizedPnL >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
-                      transition: 'all 0.3s'
-                    }} />
+
+                  <div style={{ background: 'rgba(16, 217, 160, 0.08)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(16, 217, 160, 0.2)' }}>
+                    <div style={{ color: 'var(--accent-green)', fontWeight: 600 }}>Take Profit</div>
+                    <div style={{ fontWeight: 700, marginTop: 2 }}>${activePosition.take_profit.toLocaleString()}</div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{distanceToTP.toFixed(1)}%</div>
+                  </div>
+
+                  <div style={{ background: 'rgba(245, 158, 11, 0.08)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                    <div style={{ color: 'var(--accent-yellow)', fontWeight: 600 }}>Tahmini Likidasyon</div>
+                    <div style={{ fontWeight: 700, marginTop: 2 }}>${estLiquidationPrice.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}</div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>İzole Risk</div>
                   </div>
                 </div>
 
@@ -484,7 +558,7 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
                 </button>
               </div>
             ) : (
-              /* Pozisyon Yoksa: Hızlı Test Pozisyonu Açma Bölümü */
+              /* POZİSYON YOKSA: Kaldıraç Seçici ve İşlem Büyüklüğü Ayarı */
               <div>
                 <div style={{
                   background: 'var(--bg-secondary)',
@@ -493,13 +567,104 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
                   marginBottom: 16,
                   border: '1px solid var(--border)'
                 }}>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 12 }}>
-                    Şu anda <strong>{selectedSymbol}</strong> için açık pozisyon bulunmuyor.
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 14 }}>
-                    Anlık kâr/zarar akışını canlı grafiğe bağlı olarak test etmek için hemen o anki canlı Binance fiyatından bir Paper Trading pozisyonu açabilirsiniz:
+                  {/* 1. Kaldıraç Seçimi */}
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Gauge size={14} color="var(--accent-yellow)" />
+                        <strong>Kaldıraç Çarpanı (Leverage):</strong>
+                      </span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--accent-yellow)' }}>
+                        {selectedLeverage}x Kaldıraç
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 6 }}>
+                      {LEVERAGE_OPTIONS.map(lev => (
+                        <button
+                          key={lev}
+                          type="button"
+                          onClick={() => setSelectedLeverage(lev)}
+                          style={{
+                            padding: '6px 0',
+                            borderRadius: 6,
+                            border: selectedLeverage === lev ? '1px solid var(--accent-yellow)' : '1px solid var(--border)',
+                            background: selectedLeverage === lev ? 'rgba(245,158,11,0.2)' : 'var(--bg-card)',
+                            color: selectedLeverage === lev ? 'var(--accent-yellow)' : 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                            fontSize: '0.8rem',
+                            transition: 'all 0.1s'
+                          }}
+                        >
+                          {lev}x
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
+                  {/* 2. Teminat (Margin) Seçimi */}
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <DollarSign size={14} color="var(--accent-blue)" />
+                        <strong>Kullanılacak Teminat (Margin):</strong>
+                      </span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--accent-blue)' }}>
+                        ${selectedMargin} USDT
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+                      {MARGIN_PRESETS.map(m => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setSelectedMargin(m)}
+                          style={{
+                            padding: '6px 0',
+                            borderRadius: 6,
+                            border: selectedMargin === m ? '1px solid var(--accent-blue)' : '1px solid var(--border)',
+                            background: selectedMargin === m ? 'rgba(59,130,246,0.2)' : 'var(--bg-card)',
+                            color: selectedMargin === m ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            fontSize: '0.78rem',
+                            transition: 'all 0.1s'
+                          }}
+                        >
+                          ${m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 3. Hesaplanan Toplam Pozisyon Özeti */}
+                  <div style={{
+                    background: 'var(--bg-card)',
+                    borderRadius: 8,
+                    padding: '10px 12px',
+                    marginBottom: 16,
+                    border: '1px solid rgba(59,130,246,0.25)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Toplam Açılacak İşlem Büyüklüğü</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--accent-blue)', marginTop: 2 }}>
+                        ${plannedNotional.toLocaleString('tr-TR')} USDT
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Miktar ({selectedSymbol.replace('USDT','')})</div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                        {plannedQuantity > 0 ? plannedQuantity.toFixed(4) : '...'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Long / Short Butonları */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <button
                       onClick={() => openTestPosition('long')}
@@ -521,7 +686,7 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
                       }}
                     >
                       <TrendingUp size={16} />
-                      🟢 Canlı LONG Aç
+                      {selectedLeverage}x LONG Aç
                     </button>
 
                     <button
@@ -544,38 +709,8 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
                       }}
                     >
                       <TrendingDown size={16} />
-                      🔴 Canlı SHORT Aç
+                      {selectedLeverage}x SHORT Aç
                     </button>
-                  </div>
-                </div>
-
-                {/* 24 Saatlik Özet Kartı */}
-                <div style={{
-                  background: 'var(--bg-secondary)',
-                  borderRadius: 8,
-                  padding: '12px 14px',
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: 8,
-                  fontSize: '0.78rem'
-                }}>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>24s En Yüksek:</span>
-                    <strong style={{ display: 'block', color: 'var(--text-primary)', marginTop: 2 }}>
-                      ${currentPriceData?.high24h ? currentPriceData.high24h.toLocaleString() : '—'}
-                    </strong>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>24s En Düşük:</span>
-                    <strong style={{ display: 'block', color: 'var(--text-primary)', marginTop: 2 }}>
-                      ${currentPriceData?.low24h ? currentPriceData.low24h.toLocaleString() : '—'}
-                    </strong>
-                  </div>
-                  <div style={{ gridColumn: 'span 2', marginTop: 4 }}>
-                    <span style={{ color: 'var(--text-muted)' }}>24s Hacim:</span>
-                    <strong style={{ display: 'block', color: 'var(--text-primary)', marginTop: 2 }}>
-                      {currentPriceData?.volume24h ? `${currentPriceData.volume24h.toLocaleString('tr-TR', { maximumFractionDigits: 0 })} ${selectedSymbol.replace('USDT','')}` : '—'}
-                    </strong>
                   </div>
                 </div>
               </div>
@@ -583,7 +718,7 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
           </div>
 
           <div style={{
-            marginTop: 16,
+            marginTop: 14,
             paddingTop: 12,
             borderTop: '1px solid var(--border)',
             display: 'flex',
@@ -592,8 +727,8 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
             fontSize: '0.75rem',
             color: 'var(--text-muted)'
           }}>
-            <span>Bakiye: ${Number(activeConfig?.account?.balance || 10000).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
-            <span>Risk/İşlem: %{activeConfig?.risk_per_trade_pct || 2}</span>
+            <span>Mevcut Bakiye: ${Number(activeConfig?.account?.balance || 10000).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+            <span>Varsayılan Bot Kaldıracı: {activeConfig?.leverage || 5}x</span>
           </div>
         </div>
       </div>

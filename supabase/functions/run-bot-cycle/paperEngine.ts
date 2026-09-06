@@ -9,7 +9,8 @@ export async function runPaperEngine(
   slMultiplier: number,
   tpMultiplier: number,
   riskPct: number,
-  commissionPct: number
+  commissionPct: number,
+  leverage: number = 5
 ) {
   // 1. Açık pozisyonları kontrol et
   const { data: openPositions } = await supabase
@@ -56,7 +57,7 @@ export async function runPaperEngine(
         position_id: pos.id, config_id: configId, symbol,
         direction: pos.direction, entry_price: pos.entry_price, exit_price: exitPrice,
         size: pos.size, pnl: netPnl, pnl_pct: pnlPct,
-        commission, exit_reason: closeReason, opened_at: pos.opened_at,
+        commission, leverage: pos.leverage || leverage, exit_reason: closeReason, opened_at: pos.opened_at,
       });
 
       await supabase.from('positions').update({ status: 'closed' }).eq('id', pos.id);
@@ -86,6 +87,7 @@ export async function runPaperEngine(
     await supabase.from('positions').insert({
       config_id: configId, symbol, direction: signal.direction,
       entry_price: signal.price, size, stop_loss: stopLoss, take_profit: takeProfit,
+      leverage,
     });
   }
 

@@ -327,23 +327,37 @@ export default function Dashboard() {
               const unrealized = pos.direction === 'long'
                 ? (livePrice - pos.entry_price) * pos.size
                 : (pos.entry_price - livePrice) * pos.size
-              return (
-                <div key={pos.id} style={{ padding: '14px', background: 'var(--bg-secondary)', borderRadius: 10, marginBottom: 10, border: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ fontWeight: 600 }}>{pos.symbol}</span>
-                    <span className={`badge badge-${pos.direction}`}>{pos.direction.toUpperCase()}</span>
+                const lev = pos.leverage || 5
+                const notional = pos.size * pos.entry_price
+                const margin = notional / lev
+                const roe = margin > 0 ? (unrealized / margin) * 100 : 0
+
+                return (
+                  <div key={pos.id} style={{ padding: '14px', background: 'var(--bg-secondary)', borderRadius: 10, marginBottom: 10, border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{pos.symbol}</span>
+                        <span style={{ fontSize: '0.72rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.2)', color: 'var(--accent-yellow)', fontWeight: 700 }}>
+                          {lev}x İZOLE
+                        </span>
+                      </div>
+                      <span className={`badge badge-${pos.direction}`}>{pos.direction.toUpperCase()}</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      <div>Pozisyon Tutarı: <strong style={{ color: 'var(--accent-blue)' }}>${notional.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+                      <div>Kullanılan Teminat: <strong style={{ color: '#fff' }}>${margin.toFixed(2)}</strong></div>
+                      <div>Giriş: <strong style={{ color: 'var(--text-primary)' }}>${pos.entry_price.toFixed(2)}</strong></div>
+                      <div>Anlık: <strong style={{ color: 'var(--accent-blue)' }}>${livePrice.toFixed(2)}</strong></div>
+                      <div>Miktar: <strong style={{ color: 'var(--text-primary)' }}>{pos.size.toFixed(4)}</strong></div>
+                      <div>SL / TP: <span style={{ color: 'var(--accent-red)' }}>${pos.stop_loss.toFixed(0)}</span> / <span style={{ color: 'var(--accent-green)' }}>${pos.take_profit.toFixed(0)}</span></div>
+                      <div style={{ gridColumn: 'span 2', marginTop: 4, paddingTop: 4, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Anlık PnL: <strong style={{ color: unrealized >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>${unrealized.toFixed(2)}</strong></span>
+                        <span>ROE: <strong style={{ color: roe >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>{roe >= 0 ? '+' : ''}{roe.toFixed(2)}%</strong></span>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    <div>Giriş: <strong style={{ color: 'var(--text-primary)' }}>${pos.entry_price.toFixed(2)}</strong></div>
-                    <div>Anlık: <strong style={{ color: 'var(--accent-blue)' }}>${livePrice.toFixed(2)}</strong></div>
-                    <div>SL: <strong style={{ color: 'var(--accent-red)' }}>${pos.stop_loss.toFixed(2)}</strong></div>
-                    <div>TP: <strong style={{ color: 'var(--accent-green)' }}>${pos.take_profit.toFixed(2)}</strong></div>
-                    <div>Boyut: <strong style={{ color: 'var(--text-primary)' }}>{pos.size.toFixed(4)}</strong></div>
-                    <div>PnL: <strong style={{ color: unrealized >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>${unrealized.toFixed(2)}</strong></div>
-                  </div>
-                </div>
-              )
-            })
+                )
+              })
           )}
         </div>
       </div>
