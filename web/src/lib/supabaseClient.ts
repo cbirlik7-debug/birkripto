@@ -1,13 +1,44 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+const DEFAULT_URL = 'https://rromrgcpklrkxkourmie.supabase.co'
+const DUMMY_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy'
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase env değişkenleri eksik. .env dosyanızı kontrol edin.')
+function getInitialUrl(): string {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('birkripto_supabase_url')
+    if (saved && saved.trim()) return saved.trim()
+  }
+  return (import.meta.env.VITE_SUPABASE_URL as string) || DEFAULT_URL
 }
 
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '')
+function getInitialKey(): string {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('birkripto_supabase_anon_key')
+    if (saved && saved.trim()) return saved.trim()
+  }
+  return (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || DUMMY_KEY
+}
+
+export const supabaseUrl = getInitialUrl()
+export const supabaseAnonKey = getInitialKey()
+
+export function isConfigured(): boolean {
+  return Boolean(
+    supabaseAnonKey &&
+    supabaseAnonKey !== DUMMY_KEY &&
+    !supabaseAnonKey.includes('dummy')
+  )
+}
+
+export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey)
+
+export function updateSupabaseCredentials(url: string, key: string) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('birkripto_supabase_url', url.trim())
+    localStorage.setItem('birkripto_supabase_anon_key', key.trim())
+    window.location.reload()
+  }
+}
 
 // Tipler
 export interface BotConfig {
