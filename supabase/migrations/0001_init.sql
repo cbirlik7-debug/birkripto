@@ -16,7 +16,8 @@ create table if not exists bot_config (
   tp_atr_multiplier numeric not null default 3,
   risk_per_trade_pct numeric not null default 2,
   commission_pct numeric not null default 0.04,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  unique(symbol, timeframe)
 );
 
 -- Her config'in kendi sanal bakiyesi
@@ -54,8 +55,8 @@ create table if not exists trades (
   size numeric not null,
   pnl numeric not null,
   pnl_pct numeric not null,
-  commission numeric not null,
-  exit_reason text not null check (exit_reason in ('stop_loss','take_profit','reverse_signal')),
+  commission numeric not null default 0,
+  exit_reason text not null,
   opened_at timestamptz not null,
   closed_at timestamptz default now()
 );
@@ -90,13 +91,46 @@ alter table trades enable row level security;
 alter table signals enable row level security;
 alter table equity_snapshots enable row level security;
 
--- anon rolüne sadece SELECT izni
+-- anon rolüne SELECT izni
+drop policy if exists "anon_select_bot_config" on bot_config;
 create policy "anon_select_bot_config" on bot_config for select to anon using (true);
+
+drop policy if exists "anon_update_bot_config" on bot_config;
+create policy "anon_update_bot_config" on bot_config for update to anon using (true) with check (true);
+
+drop policy if exists "anon_select_strategy_accounts" on strategy_accounts;
 create policy "anon_select_strategy_accounts" on strategy_accounts for select to anon using (true);
+
+drop policy if exists "anon_select_positions" on positions;
 create policy "anon_select_positions" on positions for select to anon using (true);
+
+drop policy if exists "anon_select_trades" on trades;
 create policy "anon_select_trades" on trades for select to anon using (true);
+
+drop policy if exists "anon_select_signals" on signals;
 create policy "anon_select_signals" on signals for select to anon using (true);
+
+drop policy if exists "anon_select_equity_snapshots" on equity_snapshots;
 create policy "anon_select_equity_snapshots" on equity_snapshots for select to anon using (true);
+
+-- service_role tam yetki
+drop policy if exists "service_all_bot_config" on bot_config;
+create policy "service_all_bot_config" on bot_config for all to service_role using (true) with check (true);
+
+drop policy if exists "service_all_strategy_accounts" on strategy_accounts;
+create policy "service_all_strategy_accounts" on strategy_accounts for all to service_role using (true) with check (true);
+
+drop policy if exists "service_all_positions" on positions;
+create policy "service_all_positions" on positions for all to service_role using (true) with check (true);
+
+drop policy if exists "service_all_trades" on trades;
+create policy "service_all_trades" on trades for all to service_role using (true) with check (true);
+
+drop policy if exists "service_all_signals" on signals;
+create policy "service_all_signals" on signals for all to service_role using (true) with check (true);
+
+drop policy if exists "service_all_equity_snapshots" on equity_snapshots;
+create policy "service_all_equity_snapshots" on equity_snapshots for all to service_role using (true) with check (true);
 
 -- =============================================
 -- Auto-create strategy_accounts on new config
@@ -104,11 +138,27 @@ create policy "anon_select_equity_snapshots" on equity_snapshots for select to a
 create or replace function create_strategy_account()
 returns trigger as $$
 begin
-  insert into strategy_accounts (config_id) values (NEW.id);
+  insert into strategy_accounts (config_id, balance, starting_balance) values (NEW.id, 10000, 10000);
   return NEW;
 end;
 $$ language plpgsql security definer;
 
+drop trigger if exists after_bot_config_insert on bot_config;
 create trigger after_bot_config_insert
   after insert on bot_config
   for each row execute function create_strategy_account();
+
+-- =============================================
+-- Varsayılan Başlangıç Konfigürasyonları
+-- =============================================
+insert into bot_config (symbol, timeframe, risk_level, enabled_indicators, indicator_params, min_confluence_score, sl_atr_multiplier, tp_atr_multiplier, risk_per_trade_pct, commission_pct)
+values
+  ('BTCUSDT', '15m', 'medium', '["ema","rsi","atr","volume_profile"]'::jsonb, '{"ema_fast":12,"ema_slow":26,"rsi_period":14,"atr_period":14,"volume_profile_bins":24}'::jsonb, 3, 2.0, 3.0, 2.0, 0.04),
+  ('ETHUSDT', '15m', 'medium', '["ema","rsi","atr","volume_profile"]'::jsonb, '{"ema_fast":12,"ema_slow":26,"rsi_period":14,"atr_period":14,"volume_profile_bins":24}'::jsonb, 3, 2.0, 3.0, 2.0, 0.04),
+  ('SOLUSDT', '15m', 'high',   '["ema","rsi","atr"]'::jsonb,                  '{"ema_fast":12,"ema_slow":26,"rsi_period":14,"atr_period":14,"volume_profile_bins":24}'::jsonb, 2, 2.5, 3.5, 3.0, 0.04)
+on conflict do nothing;
+
+-- Başlangıç hesap bakiyeleri (eğer trigger tetiklenmediyse garanti olsun)
+insert into strategy_accounts (config_id, balance, starting_balance)
+select id, 10000.00, 10000.00 from bot_config
+where id not in (select config_id from strategy_accounts);
