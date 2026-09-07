@@ -44,9 +44,9 @@ Deno.test('RSI identifies bearish momentum', () => {
 Deno.test('ATR uses true range and rejects insufficient input', () => {
   expectEqual(computeATR([1, 2], [0, 1], [0.5, 1.5], 3).length, 0);
   const result = getATRSignal(
-    [11, 12, 13, 14, 15, 16],
-    [9, 10, 11, 12, 13, 14],
-    [10, 11, 12, 13, 14, 15],
+    [10.2, 10.2, 10.2, 10.2, 10.2, 10.2],
+    [9.8, 9.8, 9.8, 9.8, 9.8, 9.8],
+    [10, 10.01, 10.02, 10.01, 10.02, 10.01],
     3,
   );
   expect(result !== null, 'ATR result should exist');
