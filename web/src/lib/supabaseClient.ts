@@ -55,6 +55,10 @@ export interface BotConfig {
   risk_per_trade_pct: number
   commission_pct: number
   leverage?: number
+  max_daily_loss_pct?: number
+  max_consecutive_losses?: number
+  max_open_positions?: number
+  cooldown_minutes?: number
   created_at: string
 }
 

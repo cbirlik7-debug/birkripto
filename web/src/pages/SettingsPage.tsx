@@ -289,6 +289,10 @@ export default function SettingsPage() {
                     { field: 'sl_atr_multiplier', label: 'SL ATR Çarpanı', step: 0.5, min: 0.5, max: 5 },
                     { field: 'tp_atr_multiplier', label: 'TP ATR Çarpanı', step: 0.5, min: 1, max: 10 },
                     { field: 'commission_pct', label: 'Komisyon (%)', step: 0.01, min: 0, max: 0.5 },
+                    { field: 'max_daily_loss_pct', label: 'Günlük Maks. Zarar (%)', step: 0.5, min: 0, max: 100 },
+                    { field: 'max_consecutive_losses', label: 'Ardışık Zarar Limiti', step: 1, min: 0, max: 100 },
+                    { field: 'max_open_positions', label: 'Maks. Açık Pozisyon', step: 1, min: 1, max: 20 },
+                    { field: 'cooldown_minutes', label: 'Cooldown (dk)', step: 5, min: 0, max: 10080 },
                   ].map(({ field, label, step, min, max }) => (
                     <label key={field} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{label}</span>

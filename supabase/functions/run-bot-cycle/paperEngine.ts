@@ -10,7 +10,11 @@ export async function runPaperEngine(
   tpMultiplier: number,
   riskPct: number,
   commissionPct: number,
-  leverage: number = 5
+  leverage: number = 5,
+  maxDailyLossPct: number = 5,
+  maxConsecutiveLosses: number = 3,
+  maxOpenPositions: number = 1,
+  cooldownMinutes: number = 0
 ) {
   // 1. Açık pozisyonları kontrol et
   const { data: openPositions } = await supabase
@@ -66,12 +70,38 @@ export async function runPaperEngine(
     }
   }
 
-  // 3. Yeni pozisyon aç (sadece mevcut açık pozisyon yoksa)
+  // 3. Yeni pozisyon açmadan önce risk korumalarını kontrol et
   const { count: openCount } = await supabase
     .from('positions').select('id', { count: 'exact', head: true })
     .eq('config_id', configId).eq('status', 'open');
 
-  if ((openCount ?? 0) === 0 && signal.direction !== 'neutral' && signal.atrValue > 0) {
+  const startOfDay = new Date();
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const { data: recentTrades } = await supabase
+    .from('trades')
+    .select('pnl, closed_at')
+    .eq('config_id', configId)
+    .order('closed_at', { ascending: false })
+    .limit(100);
+
+  const dailyPnl = (recentTrades ?? [])
+    .filter((trade) => new Date(trade.closed_at).getTime() >= startOfDay.getTime())
+    .reduce((total, trade) => total + Number(trade.pnl), 0);
+  let consecutiveLosses = 0;
+  for (const trade of recentTrades ?? []) {
+    if (Number(trade.pnl) < 0) consecutiveLosses++;
+    else break;
+  }
+  const latestTrade = recentTrades?.[0];
+  const cooldownActive = Boolean(
+    latestTrade && cooldownMinutes > 0
+      && Date.now() - new Date(latestTrade.closed_at).getTime() < cooldownMinutes * 60_000
+  );
+  const riskBlocked = dailyPnl <= -(Number(accountData.starting_balance) * (maxDailyLossPct / 100))
+    || (maxConsecutiveLosses > 0 && consecutiveLosses >= maxConsecutiveLosses)
+    || cooldownActive;
+
+  if ((openCount ?? 0) < maxOpenPositions && !riskBlocked && signal.direction !== 'neutral' && signal.atrValue > 0) {
     const riskAmount = balance * (riskPct / 100);
     const slDistance = signal.atrValue * slMultiplier;
     const size = riskAmount / slDistance;

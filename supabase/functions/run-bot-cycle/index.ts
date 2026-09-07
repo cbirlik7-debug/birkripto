@@ -110,7 +110,11 @@ Deno.serve(async (req) => {
           cfg.tp_atr_multiplier,
           cfg.risk_per_trade_pct,
           cfg.commission_pct,
-          cfg.leverage || 5
+          cfg.leverage || 5,
+          cfg.max_daily_loss_pct ?? 5,
+          cfg.max_consecutive_losses ?? 3,
+          cfg.max_open_positions ?? 1,
+          cfg.cooldown_minutes ?? 0
         );
 
         const { error: markProcessedError } = await supabase
