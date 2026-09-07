@@ -12,15 +12,11 @@ jobs:
       - name: Trigger Supabase Edge Function
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://rromrgcpklrkxkourmie.supabase.co' }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          BOT_WEBHOOK_SECRET: ${{ secrets.BOT_WEBHOOK_SECRET }}
         run: |
-          AUTH_HEADER=""
-          if [ -n "$SUPABASE_SERVICE_ROLE" ]; then
-            AUTH_HEADER="Authorization: Bearer $SUPABASE_SERVICE_ROLE"
-          fi
           response=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST "${SUPABASE_URL}/functions/v1/run-bot-cycle" \
-            ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+            -H "x-bot-webhook-secret: $BOT_WEBHOOK_SECRET" \
             -H "Content-Type: application/json")
           echo "HTTP Status: $response"
           if [ "$response" != "200" ]; then

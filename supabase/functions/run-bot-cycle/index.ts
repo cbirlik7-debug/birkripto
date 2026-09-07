@@ -11,6 +11,21 @@ const corsHeaders = {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  const expectedWebhookSecret = Deno.env.get('BOT_WEBHOOK_SECRET');
+  const providedWebhookSecret = req.headers.get('x-bot-webhook-secret');
+  if (!expectedWebhookSecret) {
+    return new Response(JSON.stringify({ error: 'BOT_WEBHOOK_SECRET yapılandırılmamış' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  if (!providedWebhookSecret || providedWebhookSecret !== expectedWebhookSecret) {
+    return new Response(JSON.stringify({ error: 'Yetkisiz bot çağrısı' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -36,10 +51,25 @@ Deno.serve(async (req) => {
       try {
         // Binance'ten kline verisi çek (100 mum)
         const klines = await fetchKlines(cfg.symbol, cfg.timeframe, 100);
+        const closedKlines = klines.slice(0, -1);
+        const lastClosedCandle = closedKlines[closedKlines.length - 1];
+        if (!lastClosedCandle) throw new Error('Kapalı mum verisi bulunamadı');
+
+        const { data: existingSignal, error: existingSignalError } = await supabase
+          .from('signals')
+          .select('id')
+          .eq('config_id', cfg.id)
+          .eq('candle_open_time', lastClosedCandle.openTime)
+          .maybeSingle();
+        if (existingSignalError) throw existingSignalError;
+        if (existingSignal) {
+          results.push({ symbol: cfg.symbol, skipped: true, candleOpenTime: lastClosedCandle.openTime });
+          continue;
+        }
 
         // Sinyal üret
         const signal = generateSignal(
-          klines,
+          closedKlines,
           cfg.enabled_indicators as string[],
           cfg.indicator_params as Record<string, number>,
           cfg.min_confluence_score
@@ -53,6 +83,7 @@ Deno.serve(async (req) => {
           score: Math.round(signal.score),
           price: signal.price,
           reasons: signal.reasons,
+          candle_open_time: lastClosedCandle.openTime,
         });
 
         // Paper trading simülasyonu

@@ -68,12 +68,18 @@ export default function SettingsPage() {
   async function saveConfig(cfg: BotConfig) {
     setSaving(cfg.id)
     const changes = edited[cfg.id] ?? {}
-    const { error } = await supabase.from('bot_config').update(changes).eq('id', cfg.id)
-    if (!error) {
-      setConfigs(cs => cs.map(c => c.id === cfg.id ? { ...c, ...changes } : c))
+    const { data: updatedConfig, error } = await supabase.rpc('update_bot_config', {
+      p_config_id: cfg.id,
+      p_changes: changes,
+    })
+    if (!error && updatedConfig) {
+      setConfigs(cs => cs.map(c => c.id === cfg.id ? updatedConfig : c))
       setEdited(e => { const n = { ...e }; delete n[cfg.id]; return n })
       setSuccessMsg(`${cfg.symbol} ayarları kaydedildi!`)
       setTimeout(() => setSuccessMsg(null), 3000)
+    } else if (error) {
+      setSuccessMsg(`Ayarlar kaydedilemedi: ${error.message}`)
+      setTimeout(() => setSuccessMsg(null), 5000)
     }
     setSaving(null)
   }

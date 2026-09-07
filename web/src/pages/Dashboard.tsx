@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase, BotConfig, StrategyAccount, Trade, Signal, Position } from '../lib/supabaseClient'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { RefreshCw, RotateCcw, CheckCircle2, TrendingUp, TrendingDown, DollarSign, Activity, Zap } from 'lucide-react'
+import { RotateCcw, TrendingUp, TrendingDown, DollarSign, Activity, Zap } from 'lucide-react'
 import LiveChartAndPnL from '../components/LiveChartAndPnL'
 
 interface DashboardData {
@@ -15,8 +15,6 @@ interface DashboardData {
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [triggering, setTriggering] = useState(false)
-  const [runMessage, setRunMessage] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
@@ -64,29 +62,6 @@ export default function Dashboard() {
     }
   }
 
-  async function triggerBotCycle() {
-    setTriggering(true)
-    try {
-      const res = await fetch('https://rromrgcpklrkxkourmie.supabase.co/functions/v1/run-bot-cycle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      const result = await res.json()
-      if (result.success && result.results) {
-        const prices = result.results.map((r: any) => `${r.symbol}: $${Number(r.price).toLocaleString()}`).join(' · ')
-        setRunMessage(`✓ Bot döngüsü tamamlandı! Canlı Binance: ${prices}`)
-      } else {
-        setRunMessage(`Bot yanıtı: ${result.message || 'Döngü tamamlandı'}`)
-      }
-      await loadData()
-    } catch (e: any) {
-      setRunMessage(`Bağlantı hatası: ${e.message}`)
-    } finally {
-      setTriggering(false)
-      setTimeout(() => setRunMessage(null), 8000)
-    }
-  }
-
   if (loading) return (
     <div className="loading-container">
       <div className="loading-spinner" />
@@ -106,35 +81,12 @@ export default function Dashboard() {
 
   return (
     <div>
-      {/* Header with Run Now Button */}
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h2>Dashboard</h2>
           <p>Tüm stratejilerin anlık özeti ve canlı Binance verileri</p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button
-            onClick={triggerBotCycle}
-            disabled={triggering}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 20px',
-              borderRadius: 8,
-              border: 'none',
-              background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-              color: '#fff',
-              cursor: triggering ? 'not-allowed' : 'pointer',
-              fontWeight: 600,
-              fontSize: '0.9rem',
-              boxShadow: '0 4px 14px rgba(59,130,246,0.35)',
-              transition: 'all 0.2s',
-            }}
-          >
-            <RefreshCw size={16} className={triggering ? 'spin' : ''} />
-            {triggering ? 'Piyasa Taranıyor...' : '⚡ Botu Şimdi Çalıştır'}
-          </button>
           <button
             onClick={loadData}
             title="Verileri Yenile"
@@ -151,25 +103,6 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
-
-      {runMessage && (
-        <div style={{
-          padding: '12px 20px',
-          background: 'rgba(16,217,160,0.12)',
-          border: '1px solid rgba(16,217,160,0.3)',
-          borderRadius: 10,
-          marginBottom: 20,
-          color: 'var(--accent-green)',
-          fontSize: '0.9rem',
-          fontWeight: 500,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-        }}>
-          <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
-          <span>{runMessage}</span>
-        </div>
-      )}
 
       {/* Live Market Bar */}
       <div style={{
@@ -295,21 +228,7 @@ export default function Dashboard() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 240, color: 'var(--text-muted)', gap: 12 }}>
               <p style={{ margin: 0 }}>Henüz bakiye geçmişi kaydı yok.</p>
-              <button
-                onClick={triggerBotCycle}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 6,
-                  border: '1px solid var(--accent-blue)',
-                  background: 'rgba(59,130,246,0.1)',
-                  color: 'var(--accent-blue)',
-                  cursor: 'pointer',
-                  fontWeight: 500,
-                  fontSize: '0.85rem'
-                }}
-              >
-                İlk Döngüyü Şimdi Başlat
-              </button>
+                <span style={{ fontSize: '0.8rem' }}>İlk kayıt GitHub Actions zamanlayıcısı çalıştığında oluşur.</span>
             </div>
           )}
         </div>

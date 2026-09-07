@@ -20,6 +20,7 @@ Repository → **Settings → Secrets and variables → Actions**:
 - `SUPABASE_URL` = Supabase URL (ör. `https://xxxx.supabase.co`)
 - `SUPABASE_ANON_KEY` = anon/public key
 - `SUPABASE_SERVICE_ROLE` = service_role key (gizli!)
+- `BOT_WEBHOOK_SECRET` = GitHub Actions'ın bot fonksiyonunu çağırmak için kullandığı ayrı gizli değer
 
 ### 3. Supabase Edge Function Deploy Et
 ```bash
@@ -27,6 +28,14 @@ npm install -g supabase
 supabase login
 supabase functions deploy run-bot-cycle --project-ref <PROJECT_REF>
 ```
+
+Edge Function secret'ını ayrıca tanımlayın:
+
+```bash
+supabase secrets set BOT_WEBHOOK_SECRET=<uzun-rastgele-deger> --project-ref <PROJECT_REF>
+```
+
+Veritabanı migration dosyalarını Supabase SQL Editor'da sırayla çalıştırın. `0004_bot_cycle_idempotency.sql`, `0005_secure_bot_config_update.sql` ve `0006_secure_manual_trading.sql` dosyaları da uygulanmalıdır.
 
 ### 4. GitHub Pages Aktif Et
 Repository → **Settings → Pages** → Source: `gh-pages` branch

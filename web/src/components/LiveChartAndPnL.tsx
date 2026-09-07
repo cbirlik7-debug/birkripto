@@ -173,16 +173,15 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
       const stopLoss = direction === 'long' ? currentPrice - slDistance : currentPrice + slDistance
       const takeProfit = direction === 'long' ? currentPrice + tpDistance : currentPrice - tpDistance
 
-      const { error } = await supabase.from('positions').insert({
-        config_id: activeConfig.id,
-        symbol: selectedSymbol,
-        direction,
-        entry_price: currentPrice,
-        size,
-        stop_loss: stopLoss,
-        take_profit: takeProfit,
-        leverage: selectedLeverage,
-        status: 'open',
+        const { error } = await supabase.rpc('open_manual_position', {
+          p_config_id: activeConfig.id,
+          p_symbol: selectedSymbol,
+          p_direction: direction,
+          p_entry_price: currentPrice,
+          p_size: size,
+          p_stop_loss: stopLoss,
+          p_take_profit: takeProfit,
+          p_leverage: selectedLeverage,
       })
 
       if (error) throw error
@@ -204,40 +203,13 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
 
     setActionLoading(true)
     try {
-      await supabase.from('positions').update({ status: 'closed' }).eq('id', activePosition.id)
-
-      const exitCommission = currentPrice * activePosition.size * (commissionPct / 100)
-      const totalTradeCommission = entryCommission + exitCommission
-      const finalNetPnl = grossPnL - totalTradeCommission
-      const startBal = Number(activeConfig.account?.starting_balance || 10000)
-      const pnlPct = (finalNetPnl / startBal) * 100
-
-      await supabase.from('trades').insert({
-        position_id: activePosition.id,
-        config_id: activePosition.config_id,
-        symbol: selectedSymbol,
-        direction: activePosition.direction,
-        entry_price: activePosition.entry_price,
-        exit_price: currentPrice,
-        size: activePosition.size,
-        pnl: finalNetPnl,
-        pnl_pct: pnlPct,
-        commission: totalTradeCommission,
-        leverage: posLeverage,
-        exit_reason: 'manual_market_close',
-        opened_at: activePosition.opened_at,
+        const { data: closeResult, error } = await supabase.rpc('close_manual_position', {
+          p_position_id: activePosition.id,
+          p_exit_price: currentPrice,
       })
-
-      const newBal = Number(activeConfig.account?.balance || 10000) + finalNetPnl
-      await supabase.from('strategy_accounts').update({
-        balance: newBal,
-        updated_at: new Date().toISOString()
-      }).eq('config_id', activeConfig.id)
-
-      await supabase.from('equity_snapshots').insert({
-        config_id: activeConfig.id,
-        balance: newBal,
-      })
+        if (error) throw error
+        const finalNetPnl = Number(closeResult.net_pnl)
+        const totalTradeCommission = Number(closeResult.commission)
 
       setActionNotice(`✓ Pozisyon kapatıldı! Net PnL: ${finalNetPnl >= 0 ? '+' : ''}$${finalNetPnl.toFixed(2)} (Toplam Komisyon: -$${totalTradeCommission.toFixed(3)})`)
       setTimeout(() => setActionNotice(null), 6000)
