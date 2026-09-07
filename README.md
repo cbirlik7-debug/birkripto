@@ -35,7 +35,7 @@ Edge Function secret'ını ayrıca tanımlayın:
 supabase secrets set BOT_WEBHOOK_SECRET=<uzun-rastgele-deger> --project-ref <PROJECT_REF>
 ```
 
-Veritabanı migration dosyalarını Supabase SQL Editor'da sırayla çalıştırın. `0004_bot_cycle_idempotency.sql`, `0005_secure_bot_config_update.sql` ve `0006_secure_manual_trading.sql` dosyaları da uygulanmalıdır.
+Veritabanı migration dosyalarını Supabase SQL Editor'da sırayla çalıştırın. `0004_bot_cycle_idempotency.sql`, `0005_secure_bot_config_update.sql`, `0006_secure_manual_trading.sql` ve `0007_signal_processing_state.sql` dosyaları da uygulanmalıdır.
 
 ### 4. GitHub Pages Aktif Et
 Repository → **Settings → Pages** → Source: `gh-pages` branch
@@ -49,6 +49,8 @@ git push origin main
 GitHub Actions otomatik olarak:
 - Frontend'i build edip GitHub Pages'a deploy eder
 - Her 15 dakikada bot döngüsünü çalıştırır
+
+Dashboard'daki **Sinyali Şimdi Kontrol Et** düğmesi, seçili asset için backend'de yeni sinyal taraması yapar. LONG veya SHORT sinyali oluşursa kullanıcı **Onayla ve Aç** düğmesiyle paper pozisyonu anlık fiyat üzerinden açabilir.
 
 ## 📁 Yapı
 ```

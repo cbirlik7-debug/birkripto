@@ -17,6 +17,21 @@ interface Props {
   onRefresh: () => void
 }
 
+interface ManualSignalResult {
+  symbol: string
+  signal: {
+    direction: 'long' | 'short' | 'neutral'
+    score: number
+    reasons: string[]
+    price: number
+    atrValue: number
+  }
+  slMultiplier: number
+  tpMultiplier: number
+  leverage: number
+  alreadyRecorded: boolean
+}
+
 const SYMBOLS = [
   { symbol: 'BTCUSDT', name: 'Bitcoin', icon: '₿' },
   { symbol: 'ETHUSDT', name: 'Ethereum', icon: 'Ξ' },
@@ -31,6 +46,8 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
   const [livePrices, setLivePrices] = useState<Record<string, LivePriceData>>({})
   const [actionLoading, setActionLoading] = useState(false)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
+  const [signalChecking, setSignalChecking] = useState(false)
+  const [signalResult, setSignalResult] = useState<ManualSignalResult | null>(null)
   
   // Kaldıraç ve Teminat Tercihleri
   const [selectedLeverage, setSelectedLeverage] = useState<number>(5)
@@ -216,6 +233,62 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
       onRefresh()
     } catch (err: any) {
       alert(`Kapatma hatası: ${err.message}`)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function checkSignalNow() {
+    if (!activeConfig) return
+    setSignalChecking(true)
+    setSignalResult(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('manual-signal-check', {
+        body: { config_id: activeConfig.id },
+      })
+      if (error) throw error
+      setSignalResult(data as ManualSignalResult)
+    } catch (err: any) {
+      setActionNotice(`Sinyal kontrolü başarısız: ${err.message}`)
+      setTimeout(() => setActionNotice(null), 6000)
+    } finally {
+      setSignalChecking(false)
+    }
+  }
+
+  async function openApprovedSignalPosition() {
+    if (!signalResult || !activeConfig || currentPrice <= 0 || activePosition) return
+    const { signal } = signalResult
+    if (signal.direction === 'neutral' || signal.atrValue <= 0) return
+
+    const leverage = signalResult.leverage
+    const notional = selectedMargin * leverage
+    const size = notional / currentPrice
+    const slDistance = signal.atrValue * signalResult.slMultiplier
+    const tpDistance = signal.atrValue * signalResult.tpMultiplier
+    const stopLoss = signal.direction === 'long' ? currentPrice - slDistance : currentPrice + slDistance
+    const takeProfit = signal.direction === 'long' ? currentPrice + tpDistance : currentPrice - tpDistance
+
+    setActionLoading(true)
+    try {
+      const { error } = await supabase.rpc('open_manual_position', {
+        p_config_id: activeConfig.id,
+        p_symbol: selectedSymbol,
+        p_direction: signal.direction,
+        p_entry_price: currentPrice,
+        p_size: size,
+        p_stop_loss: stopLoss,
+        p_take_profit: takeProfit,
+        p_leverage: leverage,
+      })
+      if (error) throw error
+      setActionNotice(`✓ ${signal.direction.toUpperCase()} sinyali onaylandı ve pozisyon açıldı.`)
+      setSignalResult(null)
+      setTimeout(() => setActionNotice(null), 6000)
+      onRefresh()
+    } catch (err: any) {
+      setActionNotice(`Pozisyon açılamadı: ${err.message}`)
+      setTimeout(() => setActionNotice(null), 6000)
     } finally {
       setActionLoading(false)
     }
@@ -703,6 +776,36 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
                       <span>Tahmini Çift Yönlü Komisyon (Giriş + Çıkış):</span>
                       <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>${plannedRoundTripFee.toFixed(3)} USDT</span>
                     </div>
+                  </div>
+
+                  <div style={{ marginBottom: 14, padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'rgba(59,130,246,0.06)' }}>
+                    <button
+                      onClick={checkSignalNow}
+                      disabled={signalChecking || actionLoading || Boolean(activePosition)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 7, border: '1px solid var(--accent-blue)', background: 'rgba(59,130,246,0.12)', color: 'var(--accent-blue)', fontWeight: 700, cursor: signalChecking || activePosition ? 'not-allowed' : 'pointer' }}
+                    >
+                      {signalChecking ? 'Piyasa Taranıyor...' : 'Sinyali Şimdi Kontrol Et'}
+                    </button>
+                    {signalResult && (
+                      <div style={{ marginTop: 10, fontSize: '0.8rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <strong>{signalResult.signal.direction.toUpperCase()}</strong>
+                          <span>Skor: {signalResult.signal.score}</span>
+                        </div>
+                        <div style={{ color: 'var(--text-muted)', marginTop: 5 }}>
+                          {signalResult.signal.reasons.join(' · ') || 'Yeterli confluence oluşmadı.'}
+                        </div>
+                        {signalResult.signal.direction !== 'neutral' && (
+                          <button
+                            onClick={openApprovedSignalPosition}
+                            disabled={actionLoading || Boolean(activePosition)}
+                            style={{ width: '100%', marginTop: 9, padding: '9px 12px', borderRadius: 7, border: 'none', background: 'var(--accent-green)', color: '#07131a', fontWeight: 800, cursor: actionLoading || activePosition ? 'not-allowed' : 'pointer' }}
+                          >
+                            {actionLoading ? 'Pozisyon Açılıyor...' : `${signalResult.signal.direction.toUpperCase()} Sinyalini Onayla ve Aç`}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Long / Short Butonları */}

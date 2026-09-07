@@ -11,12 +11,16 @@
 - [x] Settings güncellemeleri kontrollü RPC arkasına taşındı.
 - [x] Manuel pozisyon açma/kapama işlemleri atomik RPC arkasına taşındı.
 - [x] `bot_config`, pozisyon, trade, hesap ve equity tablolarındaki anon yazma izinleri migration ile kaldırıldı.
+- [x] Dashboard'a backend tabanlı anlık sinyal kontrolü eklendi.
+- [x] Uygun LONG/SHORT sinyalini onaylayarak anlık paper pozisyon açma eklendi.
+- [x] Sinyal kaydı ile paper engine işleme durumu `processed_at` alanıyla ayrıldı.
 
 ## Sıradaki Öncelikler
 
 - [ ] `BOT_WEBHOOK_SECRET` değerini Supabase Edge Function secret'ı olarak ayarla.
 - [ ] `0004_bot_cycle_idempotency.sql` migration'ını canlı Supabase projesinde çalıştır.
-- [ ] `0005` ve `0006` migration'larını canlı Supabase projesinde çalıştır.
+- [x] `0005` ve `0006` migration'larını canlı Supabase projesinde çalıştır.
+- [x] `0007_signal_processing_state.sql` migration'ını canlı Supabase projesinde çalıştır.
 - [ ] Canlı veritabanında anon ile yazma işlemlerinin reddedildiğini doğrula.
 - [ ] Aynı mum için yarış durumlarını transaction/upsert ile tamamen atomik hale getir.
 - [ ] İndikatör, sinyal ve paper engine testleri ekle.

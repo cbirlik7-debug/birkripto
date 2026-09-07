@@ -57,12 +57,12 @@ Deno.serve(async (req) => {
 
         const { data: existingSignal, error: existingSignalError } = await supabase
           .from('signals')
-          .select('id')
+          .select('id, processed_at')
           .eq('config_id', cfg.id)
           .eq('candle_open_time', lastClosedCandle.openTime)
           .maybeSingle();
         if (existingSignalError) throw existingSignalError;
-        if (existingSignal) {
+        if (existingSignal?.processed_at) {
           results.push({ symbol: cfg.symbol, skipped: true, candleOpenTime: lastClosedCandle.openTime });
           continue;
         }
@@ -76,15 +76,29 @@ Deno.serve(async (req) => {
         );
 
         // Sinyali veritabanına kaydet
-        await supabase.from('signals').insert({
-          config_id: cfg.id,
-          symbol: cfg.symbol,
-          direction: signal.direction,
-          score: Math.round(signal.score),
-          price: signal.price,
-          reasons: signal.reasons,
-          candle_open_time: lastClosedCandle.openTime,
-        });
+        if (existingSignal) {
+          const { error: updateSignalError } = await supabase
+            .from('signals')
+            .update({
+              direction: signal.direction,
+              score: Math.round(signal.score),
+              price: signal.price,
+              reasons: signal.reasons,
+            })
+            .eq('id', existingSignal.id);
+          if (updateSignalError) throw updateSignalError;
+        } else {
+          const { error: insertSignalError } = await supabase.from('signals').insert({
+            config_id: cfg.id,
+            symbol: cfg.symbol,
+            direction: signal.direction,
+            score: Math.round(signal.score),
+            price: signal.price,
+            reasons: signal.reasons,
+            candle_open_time: lastClosedCandle.openTime,
+          });
+          if (insertSignalError) throw insertSignalError;
+        }
 
         // Paper trading simülasyonu
         await runPaperEngine(
@@ -98,6 +112,13 @@ Deno.serve(async (req) => {
           cfg.commission_pct,
           cfg.leverage || 5
         );
+
+        const { error: markProcessedError } = await supabase
+          .from('signals')
+          .update({ processed_at: new Date().toISOString() })
+          .eq('config_id', cfg.id)
+          .eq('candle_open_time', lastClosedCandle.openTime);
+        if (markProcessedError) throw markProcessedError;
 
         results.push({
           symbol: cfg.symbol,
