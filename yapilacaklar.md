@@ -14,6 +14,7 @@
 - [x] Dashboard'a backend tabanlı anlık sinyal kontrolü eklendi.
 - [x] Uygun LONG/SHORT sinyalini onaylayarak anlık paper pozisyon açma eklendi.
 - [x] Sinyal kaydı ile paper engine işleme durumu `processed_at` alanıyla ayrıldı.
+- [x] Açık pozisyonlar için 5 dakikalık SL/TP monitor Edge Function'ı eklendi.
 
 ## Sıradaki Öncelikler
 

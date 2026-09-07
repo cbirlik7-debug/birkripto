@@ -1,0 +1,29 @@
+name: Monitor Open Positions
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # GitHub Actions en az 5 dakikada bir tetiklenebilir.
+  workflow_dispatch:
+
+jobs:
+  monitor-open-positions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check stop loss and take profit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://rromrgcpklrkxkourmie.supabase.co' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          BOT_WEBHOOK_SECRET: ${{ secrets.BOT_WEBHOOK_SECRET }}
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${SUPABASE_URL}/functions/v1/monitor-positions" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "x-bot-webhook-secret: $BOT_WEBHOOK_SECRET" \
+            -H "Content-Type: application/json")
+          echo "HTTP Status: $response"
+          if [ "$response" != "200" ]; then
+            echo "Pozisyon monitor çağrısı başarısız: $response"
+            exit 1
+          fi
+          echo "Açık pozisyonlar kontrol edildi."

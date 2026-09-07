@@ -49,6 +49,7 @@ git push origin main
 GitHub Actions otomatik olarak:
 - Frontend'i build edip GitHub Pages'a deploy eder
 - Her 15 dakikada bot döngüsünü çalıştırır
+- Her 5 dakikada açık pozisyonların SL/TP seviyelerini kontrol eder
 
 Dashboard'daki **Sinyali Şimdi Kontrol Et** düğmesi, seçili asset için backend'de yeni sinyal taraması yapar. LONG veya SHORT sinyali oluşursa kullanıcı **Onayla ve Aç** düğmesiyle paper pozisyonu anlık fiyat üzerinden açabilir.
 
