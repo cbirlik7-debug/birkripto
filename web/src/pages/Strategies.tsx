@@ -10,9 +10,24 @@ interface StrategyStats {
   maxDrawdown: number
 }
 
+interface BacktestResult {
+  symbol: string
+  timeframe: string
+  candleCount: number
+  metrics: {
+    totalTrades: number
+    winRate: number
+    totalPnl: number
+    maxDrawdown: number
+    profitFactor: number | null
+  }
+}
+
 export default function Strategies() {
   const [strategies, setStrategies] = useState<StrategyStats[]>([])
   const [loading, setLoading] = useState(true)
+  const [backtestLoading, setBacktestLoading] = useState<string | null>(null)
+  const [backtests, setBacktests] = useState<Record<string, BacktestResult>>({})
 
   useEffect(() => { loadData() }, [])
 
@@ -47,6 +62,21 @@ export default function Strategies() {
   }
 
   const riskColor = { low: 'var(--accent-green)', medium: 'var(--accent-yellow)', high: 'var(--accent-red)' }
+
+  async function runBacktest(configId: string) {
+    setBacktestLoading(configId)
+    try {
+      const { data, error } = await supabase.functions.invoke('backtest-strategy', {
+        body: { config_id: configId, limit: 500 },
+      })
+      if (error) throw error
+      setBacktests(current => ({ ...current, [configId]: data as BacktestResult }))
+    } catch (error: any) {
+      window.alert(`Backtest çalıştırılamadı: ${error.message}`)
+    } finally {
+      setBacktestLoading(null)
+    }
+  }
 
   return (
     <div>
@@ -123,6 +153,27 @@ export default function Strategies() {
                     </span>
                   ))}
                 </div>
+                  <button
+                    onClick={() => runBacktest(s.config.id)}
+                    disabled={backtestLoading === s.config.id}
+                    style={{ width: '100%', marginTop: 14, padding: '9px 12px', borderRadius: 7, border: '1px solid var(--accent-blue)', background: 'rgba(59,130,246,0.12)', color: 'var(--accent-blue)', fontWeight: 700, cursor: backtestLoading === s.config.id ? 'not-allowed' : 'pointer' }}
+                  >
+                    {backtestLoading === s.config.id ? '500 Mum Test Ediliyor...' : '500 Mum Üzerinde Backtest Çalıştır'}
+                  </button>
+                  {backtests[s.config.id] && (
+                    <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: 'var(--bg-secondary)', fontSize: '0.8rem' }}>
+                      <div style={{ color: 'var(--text-muted)', marginBottom: 8 }}>
+                        {backtests[s.config.id].candleCount} kapalı mum · {backtests[s.config.id].timeframe}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                        <span>Trade: <strong>{backtests[s.config.id].metrics.totalTrades}</strong></span>
+                        <span>Win rate: <strong>{backtests[s.config.id].metrics.winRate.toFixed(1)}%</strong></span>
+                        <span>Toplam PnL: <strong>{backtests[s.config.id].metrics.totalPnl.toFixed(2)}%</strong></span>
+                        <span>Max DD: <strong>{backtests[s.config.id].metrics.maxDrawdown.toFixed(2)}%</strong></span>
+                        <span>Profit factor: <strong>{backtests[s.config.id].metrics.profitFactor?.toFixed(2) ?? '∞'}</strong></span>
+                      </div>
+                    </div>
+                  )}
               </div>
             ))}
           </div>

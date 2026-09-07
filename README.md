@@ -59,6 +59,8 @@ Dashboard, `signals`, `positions`, `trades`, `strategy_accounts` ve `equity_snap
 
 Trade geçmişi giriş nedeni, çıkış nedeni, net PnL, komisyon, kaldıraç, işlem süresi ve ROE yüzdesini gösterir.
 
+Strategies sayfasındaki backtest düğmesi, seçili config için son 500 kapanmış Binance mumunda sinyal motorunu çalıştırır. Sonuçta trade sayısı, win rate, toplam PnL, max drawdown ve profit factor gösterilir. Backtest sonuçları paper hesaplarına yazılmaz.
+
 ## 📁 Yapı
 ```
 birkripto/
