@@ -96,6 +96,9 @@ export interface Trade {
   pnl: number
   pnl_pct: number
   commission: number
+  entry_reason?: string
+  duration_seconds?: number
+  roe_pct?: number
   leverage?: number
   exit_reason: 'stop_loss' | 'take_profit' | 'reverse_signal' | 'manual_market_close' | string
   opened_at: string

@@ -35,7 +35,7 @@ Edge Function secret'ını ayrıca tanımlayın:
 supabase secrets set BOT_WEBHOOK_SECRET=<uzun-rastgele-deger> --project-ref <PROJECT_REF>
 ```
 
-Veritabanı migration dosyalarını Supabase SQL Editor'da sırayla çalıştırın. `0004_bot_cycle_idempotency.sql` ile `0010_enable_realtime.sql` arasındaki migration dosyaları uygulanmalıdır.
+Veritabanı migration dosyalarını Supabase SQL Editor'da sırayla çalıştırın. `0004_bot_cycle_idempotency.sql` ile `0011_trade_details.sql` arasındaki migration dosyaları uygulanmalıdır.
 
 ### 4. GitHub Pages Aktif Et
 Repository → **Settings → Pages** → Source: `gh-pages` branch
@@ -56,6 +56,8 @@ Dashboard'daki **Sinyali Şimdi Kontrol Et** düğmesi, seçili asset için back
 Paper engine yeni pozisyon açmadan önce günlük zarar yüzdesi, ardışık zarar limiti, maksimum açık pozisyon sayısı ve cooldown süresini kontrol eder. Bu sınırlar Settings sayfasından config bazında değiştirilebilir.
 
 Dashboard, `signals`, `positions`, `trades`, `strategy_accounts` ve `equity_snapshots` tablolarını Supabase Realtime ile dinler; yeni kayıt veya güncelleme geldiğinde verileri otomatik yeniler.
+
+Trade geçmişi giriş nedeni, çıkış nedeni, net PnL, komisyon, kaldıraç, işlem süresi ve ROE yüzdesini gösterir.
 
 ## 📁 Yapı
 ```

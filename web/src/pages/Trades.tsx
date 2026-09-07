@@ -22,6 +22,12 @@ export default function Trades() {
   const totalCommission = trades.reduce((s, t) => s + Number(t.commission || 0), 0)
   const winCount = trades.filter(t => Number(t.pnl || 0) > 0).length
   const winRate = trades.length > 0 ? (winCount / trades.length) * 100 : 0
+  function formatDuration(seconds?: number) {
+    if (!seconds || seconds < 60) return seconds ? `${seconds}s` : '—'
+    const minutes = Math.floor(seconds / 60)
+    const hours = Math.floor(minutes / 60)
+    return hours > 0 ? `${hours}s ${minutes % 60}dk` : `${minutes}dk`
+  }
 
   return (
     <div>
@@ -88,10 +94,10 @@ export default function Trades() {
           <table className="data-table">
             <thead><tr>
               <th>Tarih</th><th>Symbol</th><th>Kaldıraç</th><th>Yön</th><th>Giriş</th><th>Çıkış</th>
-              <th>Net PnL</th><th>ROE%</th><th>Ödenen Komisyon</th><th>Çıkış Nedeni</th>
+              <th>Giriş Nedeni</th><th>Süre</th><th>Net PnL</th><th>ROE%</th><th>Ödenen Komisyon</th><th>Çıkış Nedeni</th>
             </tr></thead>
             <tbody>
-              {trades.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '30px 0' }}>Henüz kapanmış trade bulunmuyor.</td></tr>}
+              {trades.length === 0 && <tr><td colSpan={12} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '30px 0' }}>Henüz kapanmış trade bulunmuyor.</td></tr>}
               {trades.map(t => {
                 const lev = t.leverage || 5
                 return (
@@ -106,11 +112,15 @@ export default function Trades() {
                     <td><span className={`badge badge-${t.direction}`}>{t.direction.toUpperCase()}</span></td>
                     <td>${Number(t.entry_price).toLocaleString()}</td>
                     <td>${Number(t.exit_price).toLocaleString()}</td>
+                    <td style={{ maxWidth: 240, fontSize: '0.75rem', color: 'var(--text-secondary)' }} title={t.entry_reason || ''}>
+                      {t.entry_reason || '—'}
+                    </td>
+                    <td className="text-muted" style={{ fontSize: '0.75rem' }}>{formatDuration(t.duration_seconds)}</td>
                     <td style={{ color: Number(t.pnl) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight: 700 }}>
                       {Number(t.pnl) >= 0 ? '+' : ''}${Number(t.pnl).toFixed(2)}
                     </td>
-                    <td style={{ color: Number(t.pnl_pct) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight: 600 }}>
-                      {Number(t.pnl_pct) >= 0 ? '+' : ''}{(Number(t.pnl_pct) * (lev / 5)).toFixed(2)}%
+                    <td style={{ color: Number(t.pnl) >= 0 ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight: 600 }}>
+                      {Number(t.roe_pct ?? Number(t.pnl_pct) * (lev / 5)) >= 0 ? '+' : ''}{Number(t.roe_pct ?? Number(t.pnl_pct) * (lev / 5)).toFixed(2)}%
                     </td>
                     <td style={{ color: 'var(--accent-yellow)', fontWeight: 600 }}>
                       -${Number(t.commission || 0).toFixed(3)} USDT

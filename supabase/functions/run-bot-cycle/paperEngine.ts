@@ -116,6 +116,7 @@ export async function runPaperEngine(
       config_id: configId, symbol, direction: signal.direction,
       entry_price: signal.price, size, stop_loss: stopLoss, take_profit: takeProfit,
       leverage,
+      entry_reason: signal.reasons.join(' · ') || 'signal_entry',
     });
   }
 
