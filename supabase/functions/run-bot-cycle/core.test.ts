@@ -6,6 +6,7 @@ import { generateSignal } from './signalEngine.ts';
 import type { Kline } from './binance.ts';
 
 const rising = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109];
+const bullish = [100, 99, 100, 101, 100, 101, 102];
 const falling = [100, 101, 102, 103, 102, 101, 100];
 
 function expect(condition: boolean, message: string): asserts condition {
@@ -28,7 +29,7 @@ Deno.test('EMA detects a rising trend', () => {
 });
 
 Deno.test('RSI identifies bullish momentum', () => {
-  const result = getRSISignal(rising, 3);
+  const result = getRSISignal(bullish, 3);
   expect(result !== null, 'RSI result should exist');
   expectEqual(result.momentum, 'bullish');
   expect(result.value > 50, 'RSI should be above 50');
