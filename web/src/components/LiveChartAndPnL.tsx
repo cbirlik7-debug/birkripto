@@ -294,6 +294,32 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
     }
   }
 
+  async function closeOnReverseSignal() {
+    if (!signalResult || !activePosition || currentPrice <= 0) return
+    const reverseDirection = activePosition.direction === 'long' ? 'short' : 'long'
+    if (signalResult.signal.direction !== reverseDirection) return
+    if (!confirm(`${reverseDirection.toUpperCase()} ters sinyali geldi. Açık pozisyonu canlı fiyatla kapatmak istiyor musunuz?`)) return
+
+    setActionLoading(true)
+    try {
+      const { data: closeResult, error } = await supabase.rpc('close_manual_position', {
+        p_position_id: activePosition.id,
+        p_exit_price: currentPrice,
+      })
+      if (error) throw error
+      const netPnl = Number(closeResult.net_pnl)
+      setActionNotice(`✓ Ters sinyal ile pozisyon kapatıldı. Net PnL: ${netPnl >= 0 ? '+' : ''}$${netPnl.toFixed(2)}`)
+      setSignalResult(null)
+      setTimeout(() => setActionNotice(null), 6000)
+      onRefresh()
+    } catch (err: any) {
+      setActionNotice(`Ters sinyal kapatması başarısız: ${err.message}`)
+      setTimeout(() => setActionNotice(null), 6000)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   return (
     <div style={{ marginBottom: 28 }}>
       {/* Parite Seçim Sekmeleri */}
@@ -502,13 +528,25 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
                       {signalResult.signal.reasons.join(' · ') || 'Yeterli confluence oluşmadı.'}
                     </div>
                     {signalResult.signal.direction !== 'neutral' && (
-                      <button
-                        onClick={openApprovedSignalPosition}
-                        disabled={actionLoading || Boolean(activePosition)}
-                        style={{ width: '100%', marginTop: 9, padding: '9px 12px', borderRadius: 7, border: 'none', background: activePosition ? 'var(--border)' : 'var(--accent-green)', color: activePosition ? 'var(--text-muted)' : '#07131a', fontWeight: 800, cursor: actionLoading || activePosition ? 'not-allowed' : 'pointer' }}
-                      >
-                        {activePosition ? 'Önce Açık Pozisyonu Kapat' : actionLoading ? 'Pozisyon Açılıyor...' : `${signalResult.signal.direction.toUpperCase()} Sinyalini Onayla ve Aç`}
-                      </button>
+                      activePosition ? (
+                        signalResult.signal.direction !== activePosition.direction && (
+                          <button
+                            onClick={closeOnReverseSignal}
+                            disabled={actionLoading}
+                            style={{ width: '100%', marginTop: 9, padding: '9px 12px', borderRadius: 7, border: 'none', background: 'var(--accent-yellow)', color: '#1a1300', fontWeight: 800, cursor: actionLoading ? 'not-allowed' : 'pointer' }}
+                          >
+                            {actionLoading ? 'Pozisyon Kapatılıyor...' : 'Ters Sinyalle Kapat'}
+                          </button>
+                        )
+                      ) : (
+                        <button
+                          onClick={openApprovedSignalPosition}
+                          disabled={actionLoading}
+                          style={{ width: '100%', marginTop: 9, padding: '9px 12px', borderRadius: 7, border: 'none', background: 'var(--accent-green)', color: '#07131a', fontWeight: 800, cursor: actionLoading ? 'not-allowed' : 'pointer' }}
+                        >
+                          {actionLoading ? 'Pozisyon Açılıyor...' : `${signalResult.signal.direction.toUpperCase()} Sinyalini Onayla ve Aç`}
+                        </button>
+                      )
                     )}
                   </div>
                 )}
