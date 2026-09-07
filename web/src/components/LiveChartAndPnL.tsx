@@ -484,6 +484,36 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
               )}
             </div>
 
+              <div style={{ marginBottom: 14, padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'rgba(59,130,246,0.06)' }}>
+                <button
+                  onClick={checkSignalNow}
+                  disabled={signalChecking || actionLoading}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 7, border: '1px solid var(--accent-blue)', background: 'rgba(59,130,246,0.12)', color: 'var(--accent-blue)', fontWeight: 700, cursor: signalChecking || actionLoading ? 'not-allowed' : 'pointer' }}
+                >
+                  {signalChecking ? 'Piyasa Taranıyor...' : 'Sinyali Şimdi Kontrol Et'}
+                </button>
+                {signalResult && (
+                  <div style={{ marginTop: 10, fontSize: '0.8rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong>{signalResult.signal.direction.toUpperCase()}</strong>
+                      <span>Skor: {signalResult.signal.score}</span>
+                    </div>
+                    <div style={{ color: 'var(--text-muted)', marginTop: 5 }}>
+                      {signalResult.signal.reasons.join(' · ') || 'Yeterli confluence oluşmadı.'}
+                    </div>
+                    {signalResult.signal.direction !== 'neutral' && (
+                      <button
+                        onClick={openApprovedSignalPosition}
+                        disabled={actionLoading || Boolean(activePosition)}
+                        style={{ width: '100%', marginTop: 9, padding: '9px 12px', borderRadius: 7, border: 'none', background: activePosition ? 'var(--border)' : 'var(--accent-green)', color: activePosition ? 'var(--text-muted)' : '#07131a', fontWeight: 800, cursor: actionLoading || activePosition ? 'not-allowed' : 'pointer' }}
+                      >
+                        {activePosition ? 'Önce Açık Pozisyonu Kapat' : actionLoading ? 'Pozisyon Açılıyor...' : `${signalResult.signal.direction.toUpperCase()} Sinyalini Onayla ve Aç`}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
             {/* POZİSYON VARSA: Kaldıraç, Net Tutar ve Canlı ROE Monitörü */}
             {activePosition ? (
               <div>
@@ -776,36 +806,6 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
                       <span>Tahmini Çift Yönlü Komisyon (Giriş + Çıkış):</span>
                       <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>${plannedRoundTripFee.toFixed(3)} USDT</span>
                     </div>
-                  </div>
-
-                  <div style={{ marginBottom: 14, padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'rgba(59,130,246,0.06)' }}>
-                    <button
-                      onClick={checkSignalNow}
-                      disabled={signalChecking || actionLoading || Boolean(activePosition)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: 7, border: '1px solid var(--accent-blue)', background: 'rgba(59,130,246,0.12)', color: 'var(--accent-blue)', fontWeight: 700, cursor: signalChecking || activePosition ? 'not-allowed' : 'pointer' }}
-                    >
-                      {signalChecking ? 'Piyasa Taranıyor...' : 'Sinyali Şimdi Kontrol Et'}
-                    </button>
-                    {signalResult && (
-                      <div style={{ marginTop: 10, fontSize: '0.8rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <strong>{signalResult.signal.direction.toUpperCase()}</strong>
-                          <span>Skor: {signalResult.signal.score}</span>
-                        </div>
-                        <div style={{ color: 'var(--text-muted)', marginTop: 5 }}>
-                          {signalResult.signal.reasons.join(' · ') || 'Yeterli confluence oluşmadı.'}
-                        </div>
-                        {signalResult.signal.direction !== 'neutral' && (
-                          <button
-                            onClick={openApprovedSignalPosition}
-                            disabled={actionLoading || Boolean(activePosition)}
-                            style={{ width: '100%', marginTop: 9, padding: '9px 12px', borderRadius: 7, border: 'none', background: 'var(--accent-green)', color: '#07131a', fontWeight: 800, cursor: actionLoading || activePosition ? 'not-allowed' : 'pointer' }}
-                          >
-                            {actionLoading ? 'Pozisyon Açılıyor...' : `${signalResult.signal.direction.toUpperCase()} Sinyalini Onayla ve Aç`}
-                          </button>
-                        )}
-                      </div>
-                    )}
                   </div>
 
                   {/* Long / Short Butonları */}
