@@ -18,6 +18,20 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData()
+
+    const realtimeChannel = supabase
+      .channel('dashboard-live-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bot_config' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'strategy_accounts' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trades' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'signals' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'equity_snapshots' }, loadData)
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(realtimeChannel)
+    }
   }, [])
 
   async function loadData() {
