@@ -122,3 +122,17 @@ export interface EquitySnapshot {
   balance: number
   created_at: string
 }
+
+export interface AiPilotLog {
+  id: string
+  config_id?: string
+  symbol: string
+  action: 'ANALYSIS' | 'SIGNAL_GENERATED' | 'ORDER_OPENED' | 'ORDER_CLOSED' | 'SKIP' | 'ERROR'
+  model_used: string
+  prompt_summary?: string
+  decision: Record<string, unknown>
+  status: 'INFO' | 'EXECUTED' | 'SKIPPED' | 'FAILED' | 'REJECTED'
+  position_id?: string
+  created_at: string
+}
+

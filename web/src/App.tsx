@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, NavLink } from 'react-router-dom'
-import { LayoutDashboard, TrendingUp, Zap, BarChart2, Settings, AlertTriangle } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, Zap, BarChart2, Settings, AlertTriangle, Sparkles } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
+import AiPilot from './pages/AiPilot'
 import Trades from './pages/Trades'
 import Signals from './pages/Signals'
 import Strategies from './pages/Strategies'
@@ -9,6 +10,7 @@ import { isConfigured } from './lib/supabaseClient'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/ai-pilot', label: 'Aİ Pilot', icon: Sparkles },
   { to: '/trades', label: 'Trade Geçmişi', icon: TrendingUp },
   { to: '/signals', label: 'Sinyaller', icon: Zap },
   { to: '/strategies', label: 'Stratejiler', icon: BarChart2 },
@@ -87,6 +89,7 @@ export default function App() {
 
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/ai-pilot" element={<AiPilot />} />
             <Route path="/trades" element={<Trades />} />
             <Route path="/signals" element={<Signals />} />
             <Route path="/strategies" element={<Strategies />} />

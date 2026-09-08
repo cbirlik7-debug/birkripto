@@ -225,6 +225,7 @@ export default function LiveChartAndPnL({ configs, positions, onRefresh }: Props
           p_exit_price: currentPrice,
       })
         if (error) throw error
+          if (!closeResult) throw new Error('Kapatma sonucu alınamadı')
         const finalNetPnl = Number(closeResult.net_pnl)
         const totalTradeCommission = Number(closeResult.commission)
 
